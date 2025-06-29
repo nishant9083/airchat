@@ -2,6 +2,13 @@
 
 AirChat is a privacy-focused, local-first chat app built with Flutter. It enables users to discover, connect, and chat with nearby devices directly—no internet required. All communication is encrypted end-to-end.
 
+## Screenshot
+
+<p align="center">
+  <img src="images/device_1.jpg" alt="Device 1" width="320" style="display:inline-block; margin-right: 12px;"/>
+  <img src="images/device_2.jpeg" alt="Device 2" width="320" style="display:inline-block;"/>
+</p>
+
 ---
 
 ## 🚀 Features
