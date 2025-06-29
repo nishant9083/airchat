@@ -1,22 +1,26 @@
 package com.example.airchat
 
+import android.os.Bundle
+import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
-import android.os.Bundle
+import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "airchat/connection"
-    private val EVENT_CHANNEL = "airchat/discoveryEvents"
-    private val MESSAGE_EVENT_CHANNEL = "airchat/messageEvents"
-    private val CONNECTION_EVENT_CHANNEL = "airchat/connectionEvents"
+    private val channel = "airchat/connection"
+    private val eventChannel = "airchat/discoveryEvents"
+    private val messageEventChannel = "airchat/messageEvents"
+    private val connectionEventChannel = "airchat/connectionEvents"
+    private val fileEventChannel = "airchat/fileEvents"
+    private val fileProgressEventChannel = "airchat/fileTransferProgressEvents"
     private lateinit var nearbyHandler: NearbyHandler
     private var discoveryEvents: EventChannel.EventSink? = null
     private var messageEvents: EventChannel.EventSink? = null
     private var connectionEvents: EventChannel.EventSink? = null
-    private lateinit var myUserId: String;
-    private lateinit var myName: String;
+    private var fileEvents: EventChannel.EventSink? = null
+    private lateinit var myUserId: String
+    private lateinit var myName: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,7 +29,7 @@ class MainActivity: FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel).setMethodCallHandler { call, result ->
             when (call.method) {
                 "startDiscovery" -> {
                     myName = call.argument<String>("name")?:"AirChatUser"
@@ -54,8 +58,8 @@ class MainActivity: FlutterActivity() {
                     val userId = call.argument<String>("userId")
                     val message = call.argument<String>("message")
                     if (userId != null && message != null) {
-                        nearbyHandler.sendMessage(userId, message)
-                        result.success(null)
+                       val id = nearbyHandler.sendMessage(userId, message)
+                        result.success(id)
                     } else {
                         result.error("INVALID_ARGUMENT", "User ID and message required", null)
                     }
@@ -81,10 +85,29 @@ class MainActivity: FlutterActivity() {
                         result.error("INVALID_ARGUMENT", "User ID required", null)
                     }
                 }
+                "sendFile" -> {
+                    val userId = call.argument<String>("userId")
+                    val filePath = call.argument<String>("filePath")
+                    val fileName = call.argument<String>("fileName")
+                    if (userId != null && filePath != null && fileName != null) {
+                       val id = nearbyHandler.sendFile(userId, filePath, fileName)
+                        result.success(id)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "userId, filePath, fileName, and mimeType required", null)
+                    }
+                }
+                "getConnectedUsers" -> {
+                    val connectedUsers = nearbyHandler.getConnectedUsers()
+                    result.success(connectedUsers)
+                }
+                "getDiscoveredUsers" -> {
+                    val discoveredUsers = nearbyHandler.getDiscoveredUsers()
+                    result.success(discoveredUsers)
+                }
                 else -> result.notImplemented()
             }
         }
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL).setStreamHandler(
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     discoveryEvents = events
@@ -94,7 +117,7 @@ class MainActivity: FlutterActivity() {
                 }
             }
         )
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, MESSAGE_EVENT_CHANNEL).setStreamHandler(
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, messageEventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     messageEvents = events
@@ -106,7 +129,7 @@ class MainActivity: FlutterActivity() {
                 }
             }
         )
-        EventChannel(flutterEngine.dartExecutor.binaryMessenger, CONNECTION_EVENT_CHANNEL).setStreamHandler(
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, connectionEventChannel).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     connectionEvents = events
@@ -118,9 +141,37 @@ class MainActivity: FlutterActivity() {
                 }
             }
         )
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, fileEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    fileEvents = events
+                    nearbyHandler.setFileEventSink(events)
+                }
+                override fun onCancel(arguments: Any?) {
+                    fileEvents = null
+                    nearbyHandler.setFileEventSink(null)
+                }
+            }
+        )
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, fileProgressEventChannel).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    nearbyHandler.setFileTransferProgressEventSink(events)
+                }
+                override fun onCancel(arguments: Any?) {
+                    nearbyHandler.setFileTransferProgressEventSink(null)
+                }
+            }
+        )
     }
 
     fun getMyUserIdAndName(): Pair<String, String>{
         return Pair(myUserId, myName)
     }
+
+    override fun onDestroy() {
+            super.onDestroy()
+            nearbyHandler.cleanup()
+            Log.d("MainActivity", "Cleaning up native resources")
+        }
 }

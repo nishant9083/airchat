@@ -17,18 +17,25 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return ChatMessage(
+      id: fields[9] as int,
       senderId: fields[0] as String,
       text: fields[1] as String,
       timestamp: fields[2] as DateTime,
       isMe: fields[3] as bool,
       isRead: fields[4] as bool,
+      type: fields[5] as String,
+      fileName: fields[6] as String?,
+      filePath: fields[7] as String?,
+      mimeType: fields[8] as String?,
+      transferProgress: fields[10] as double?,
+      status: fields[11] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.senderId)
       ..writeByte(1)
@@ -38,7 +45,21 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(3)
       ..write(obj.isMe)
       ..writeByte(4)
-      ..write(obj.isRead);
+      ..write(obj.isRead)
+      ..writeByte(5)
+      ..write(obj.type)
+      ..writeByte(6)
+      ..write(obj.fileName)
+      ..writeByte(7)
+      ..write(obj.filePath)
+      ..writeByte(8)
+      ..write(obj.mimeType)
+      ..writeByte(9)
+      ..write(obj.id)
+      ..writeByte(10)
+      ..write(obj.transferProgress)
+      ..writeByte(11)
+      ..write(obj.status);
   }
 
   @override
