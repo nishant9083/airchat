@@ -1,0 +1,29 @@
+flutter_native_splash:
+  # Background color of the splash screen
+  color: "#E5F2FF"
+
+  # You can also use a background image
+  #background_image: "assets/splash_background.png"
+
+  # Image to be displayed in the center of the splash screen
+  image: assets/icon/splash_icon.png
+
+  # Splash screen animation
+  android_12:
+    image: assets/icon/splash_icon.png
+    icon_background_color: "#FFFFFF"
+
+  # Web splash
+  web: true
+
+  # iOS splash
+  ios: true
+
+  # Set to false if you don't want the splash to stay until your app is loaded
+  android_gravity: center
+  ios_content_mode: center
+  web_image_mode: center
+
+  # Splash remains visible until Flutter renders first frame
+  fullscreen: true
+
