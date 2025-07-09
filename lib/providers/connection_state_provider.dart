@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import '../services/lan_connection_service.dart';
+import '../services/lan_peer.dart';
 
 class ConnectionStateProvider extends ChangeNotifier {
   final Map<String, String> discovered = {}; // userId -> name
-  final Set<String> connected = {}; // userIds currently connected
-  final Set<String> connecting = {}; // userIds currently connecting
-  bool discovering = false;
-  bool advertising = false;
   String? inChatUserId;
+  bool discovering = false;
 
+  // Use LAN backend's connected peers
+  List<LanPeer> get connectedPeers => LanConnectionService().connectedPeers;
 
   void setInChatUserId(String? userId) {
     inChatUserId = userId;
@@ -16,11 +17,6 @@ class ConnectionStateProvider extends ChangeNotifier {
 
   void setDiscovering(bool value) {
     discovering = value;
-    notifyListeners();
-  }
-
-  void setAdvertising(bool value) {
-    advertising = value;
     notifyListeners();
   }
 
@@ -34,27 +30,8 @@ class ConnectionStateProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setConnected(String userId) {
-    connected.add(userId);
-    connecting.remove(userId);
-    notifyListeners();
-  }
-
-  void setConnecting(String userId) {
-    connecting.add(userId);
-    notifyListeners();
-  }
-
-  void setDisconnected(String userId) {
-    connected.remove(userId);
-    connecting.remove(userId);
-    notifyListeners();
-  }
-
   void clearAll() {
     discovered.clear();
-    connected.clear();
-    connecting.clear();
     notifyListeners();
   }
 } 

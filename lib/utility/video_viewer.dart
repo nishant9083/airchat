@@ -1,6 +1,11 @@
-import 'dart:io';
+import 'dart:developer';
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
+
+import 'package:flutter/services.dart';
+import 'package:media_kit_video/media_kit_video_controls/media_kit_video_controls.dart'
+    as media_kit_video_controls;
 
 class VideoViewer extends StatefulWidget {
   final List<String> filePaths;
@@ -19,40 +24,76 @@ class VideoViewer extends StatefulWidget {
 }
 
 class _VideoViewerState extends State<VideoViewer> {
-  late final PageController _pageController;
+  late PageController _pageController;
   late int _currentIndex;
-  final Map<int, VideoPlayerController> _controllers = {};
-  final Map<int, Future<void>> _initFutures = {};
+
+  final Map<int, Player> _players = {};
+  final Map<int, VideoController> _controllers = {};
+
+  // Track play state for each video to sync UI and keyboard
+  final Map<int, ValueNotifier<bool>> _playingNotifiers = {};
+
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _pageController = PageController(initialPage: _currentIndex);
+
     for (int i = 0; i < widget.filePaths.length; i++) {
-      final controller = VideoPlayerController.file(File(widget.filePaths[i]));
+      final player = Player();
+      final controller = VideoController(player);
+      player.open(Media(widget.filePaths[i]), play: false);
+      _players[i] = player;
       _controllers[i] = controller;
-      _initFutures[i] = controller.initialize();
+      _playingNotifiers[i] = ValueNotifier<bool>(false);
+
+      // Listen to player state to update notifier
+      player.stream.playing.listen((playing) {
+        if (mounted) {
+          _playingNotifiers[i]!.value = playing;
+        }
+      });
     }
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
-    for (final controller in _controllers.values) {
-      controller.dispose();
+    for (final player in _players.values) {
+      player.dispose();
     }
+    _pageController.dispose();
+    for (final notifier in _playingNotifiers.values) {
+      notifier.dispose();
+    }
+    _focusNode.dispose();
     super.dispose();
   }
 
   void _playPause(int index) {
-    final controller = _controllers[index]!;
-    if (controller.value.isPlaying) {
-      controller.pause();
-    } else {
-      controller.play();
+    final player = _players[index];
+    if (player != null) {
+      final playing = _playingNotifiers[index]?.value ?? false;
+      if (playing) {
+        player.pause();
+      } else {
+        player.play();
+      }
     }
-    setState(() {});
+  }
+
+  // Handle keyboard events for play/pause
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is KeyDownEvent) {
+      // Space or 'k' for play/pause
+      if (event.logicalKey == LogicalKeyboardKey.space ||
+          event.logicalKey == LogicalKeyboardKey.keyK) {
+        _playPause(_currentIndex);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -60,81 +101,92 @@ class _VideoViewerState extends State<VideoViewer> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Colors.black.withValues(alpha:0.4),
+        backgroundColor: Colors.black.withValues(alpha: .4),
         elevation: 0,
         title: const Text('Video Viewer'),
       ),
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: widget.filePaths.length,
-        onPageChanged: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        itemBuilder: (context, index) {
-          final filePath = widget.filePaths[index];
-          final controller = _controllers[index]!;
-          final initFuture = _initFutures[index]!;
-          return Hero(
-            tag: (widget.tag != null && index == widget.initialIndex)
-                ? widget.tag!
-                : filePath,
-            transitionOnUserGestures: true,
-            child: GestureDetector(
-              onVerticalDragEnd: (details) {
-                if (details.velocity.pixelsPerSecond.dy > 200) {
-                  Navigator.of(context).pop();
-                }
-              },
-              child: Center(
-                child: FutureBuilder(
-                  future: initFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const CircularProgressIndicator();
-                    }
-                    return Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        AspectRatio(
-                          aspectRatio: controller.value.aspectRatio,
-                          child: VideoPlayer(controller),
+      body: Focus(
+        autofocus: true,
+        focusNode: _focusNode,
+        onKeyEvent: _handleKeyEvent,
+        child: PageView.builder(
+          controller: _pageController,
+          itemCount: widget.filePaths.length,
+          onPageChanged: (index) {
+            setState(() {
+              _currentIndex = index;
+            });
+          },
+          itemBuilder: (context, index) {
+            final filePath = widget.filePaths[index];
+            final controller = _controllers[index];
+            final tag = widget.tag;
+
+            return Hero(
+              tag: (tag != null && index == widget.initialIndex)
+                  ? tag
+                  : '$filePath-$index',
+              transitionOnUserGestures: true,
+              child: GestureDetector(
+                onVerticalDragEnd: (details) {
+                  if (details.velocity.pixelsPerSecond.dy > 200) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: Center(
+                  child: controller == null
+                      ? _buildFallback(filePath)
+                      : Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Video(controller: controller),
+                            // Use ValueListenableBuilder to sync play/pause icon with state
+                            if (_playingNotifiers[index] != null)
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _playingNotifiers[index]!,
+                                builder: (context, isPlaying, _) {
+                                  return GestureDetector(
+                                    onTap: () => _playPause(index),
+                                    child: Container(
+                                      color: Colors.transparent,
+                                      child: isPlaying
+                                          ? const SizedBox.shrink()
+                                          : const Icon(
+                                              Icons.play_arrow,
+                                              color: Colors.white,
+                                              size: 64,
+                                            ),
+                                    ),
+                                  );
+                                },
+                              ),
+                          ],
                         ),
-                        GestureDetector(
-                          onTap: () => _playPause(index),
-                          child: AnimatedOpacity(
-                            opacity: controller.value.isPlaying ? 0.0 : 1.0,
-                            duration: const Duration(milliseconds: 200),
-                            child: Container(
-                              color: Colors.black26,
-                              child: const Icon(Icons.play_arrow, color: Colors.white, size: 64),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 24,
-                          left: 24,
-                          right: 24,
-                          child: VideoProgressIndicator(
-                            controller,
-                            allowScrubbing: true,
-                            colors: VideoProgressColors(
-                              playedColor: Colors.blue,
-                              backgroundColor: Colors.white24,
-                              bufferedColor: Colors.white38,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
+    );
+  }
+
+  Widget _buildFallback(String filePath) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.videocam_off, color: Colors.white54, size: 64),
+        const SizedBox(height: 8),
+        Text(
+          'Unsupported or failed to load',
+          style: TextStyle(color: Colors.white54),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'File: ${filePath.split('/').last}',
+          style: const TextStyle(color: Colors.white38, fontSize: 12),
+        ),
+      ],
     );
   }
 }
@@ -148,41 +200,85 @@ class VideoThumbnailWidget extends StatefulWidget {
 }
 
 class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
-  late VideoPlayerController _controller;
+  late final Player _player;
+  late final VideoController _controller;
   bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.file(File(widget.filePath))
-      ..initialize().then((_) {
+
+    // Create the player and controller
+    _player = Player();
+    _controller = VideoController(_player);
+
+    // Open the video file
+    _player.open(Media(widget.filePath)).then((_) {
+      if (mounted) {
         setState(() {
           _initialized = true;
         });
-        _controller.pause();
-      });
+        _player.pause(); // Don't auto-play
+      }
+    }).catchError((e) {
+      // No controls, so just log and fallback
+      log('Error loading video thumbnail: $e');
+      if (mounted) {
+        setState(() {
+          _initialized = false;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _player.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_initialized) {
-      return AspectRatio(
-        aspectRatio: _controller.value.aspectRatio,
-        child: VideoPlayer(_controller),
-      );
-    } else {
-      return Container(
-        color: Colors.black12,
-        child: const Center(
-          child: Icon(Icons.videocam, color: Colors.grey, size: 48),
-        ),
-      );
+    if (!_initialized) {
+      return _buildThumbnailFallback();
     }
+
+    // final width = _player.state.width;
+    // final height = _player.state.height;
+    // double aspectRatio;
+    // if (width != null && height != null && width > 0 && height > 0) {
+    //   aspectRatio = width / height;
+    // } else {
+    //   aspectRatio = 16 / 9;
+    // }
+    // No controls, just the video (paused)
+    return SizedBox(
+        // height: 120,
+        // child: AbsorbPointer(
+          child: Video(controller: _controller, controls: media_kit_video_controls.NoVideoControls,
+        ));
+        // );
   }
-} 
+
+  Widget _buildThumbnailFallback() {
+    return Container(
+      color: Colors.black12,
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.videocam, color: Colors.grey, size: 32),
+            SizedBox(height: 4),
+            Text(
+              'Video',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

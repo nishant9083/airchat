@@ -104,6 +104,9 @@ class MainActivity: FlutterActivity() {
                     val discoveredUsers = nearbyHandler.getDiscoveredUsers()
                     result.success(discoveredUsers)
                 }
+                // "getSubnetMask" -> {
+                //     val mask = getSubnetMask()
+                // }
                 else -> result.notImplemented()
             }
         }
@@ -168,6 +171,14 @@ class MainActivity: FlutterActivity() {
     fun getMyUserIdAndName(): Pair<String, String>{
         return Pair(myUserId, myName)
     }
+
+//     fun getSubnetMask(): String? {
+//     val wifiManager = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
+//     val dhcpInfo = wifiManager.dhcpInfo
+//     val maskInt = dhcpInfo.netmask
+//     return "${maskInt shr 24 and 0xFF}.${maskInt shr 16 and 0xFF}.${maskInt shr 8 and 0xFF}.${maskInt and 0xFF}"
+// }
+
 
     override fun onDestroy() {
             super.onDestroy()

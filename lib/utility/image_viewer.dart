@@ -97,7 +97,7 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
           return Hero(
             tag: (widget.tag != null && index == widget.initialIndex)
                 ? widget.tag!
-                : filePath,
+                : '$filePath-$index',
             transitionOnUserGestures: true,
             child: GestureDetector(
               onDoubleTapDown: (details) {

@@ -1,128 +1,117 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'lan_connection_service.dart';
+import 'lan_peer.dart';
 
 class ConnectionService {
-  static const MethodChannel _channel = MethodChannel('airchat/connection');
-  static const EventChannel _discoveryChannel = EventChannel('airchat/discoveryEvents');
-  static const EventChannel _messageChannel = EventChannel('airchat/messageEvents');
-  static const EventChannel _connectionChannel = EventChannel('airchat/connectionEvents');
-  static const EventChannel _fileChannel = EventChannel('airchat/fileEvents');
-  static const EventChannel _fileProgressChannel = EventChannel('airchat/fileTransferProgressEvents');
+  static final LanConnectionService _lan = LanConnectionService();
+  
 
-  static Stream<Map<String, dynamic>> get discoveredDevicesStream => _discoveryChannel.receiveBroadcastStream().map((event) => Map<String, dynamic>.from(event));
-  static Stream<Map<String, dynamic>> get messageEventsStream => _messageChannel.receiveBroadcastStream().map((event) => Map<String, dynamic>.from(event));
-  static Stream<Map<String, dynamic>> get connectionEventsStream => _connectionChannel.receiveBroadcastStream().map((event) => Map<String, dynamic>.from(event));
-  static Stream<Map<String, dynamic>> get fileEventsStream => _fileChannel.receiveBroadcastStream().map((event) => Map<String, dynamic>.from(event));
-  static Stream<Map<String, dynamic>> get fileTransferProgressStream => _fileProgressChannel.receiveBroadcastStream().map((event) => Map<String, dynamic>.from(event));
+  // Streams for UI compatibility
+  static Stream<Map<String, dynamic>> get discoveredDevicesStream =>
+      _lan.discoveredPeersStream.asyncExpand((peers) {
+        if (peers.isEmpty) {
+          return Stream.value({'type': 'off'});
+        }
+        return Stream.fromIterable(peers.map((peer) => {
+          'type': 'found',
+          'id': peer.userId,
+          'name': peer.name,
+          'ip': peer.ip,
+          'port': peer.port,
+        }));
+      });
 
-  static bool _isRequestingPermission = false;
+  static Stream<Map<String, dynamic>> get messageEventsStream =>
+      _lan.messageEventStream;
 
-  static Future<void> _ensurePermissions() async {
-    if (_isRequestingPermission) return; // Prevent multiple requests
-    try{
-    _isRequestingPermission = true;
-    final status = await Permission.locationWhenInUse.status;
-    if (!status.isGranted) {
-      final result = await Permission.locationWhenInUse.request();
-      if (!result.isGranted) {
-        throw Exception('Location permission is required for device discovery.');
-      }
-    }}
-    catch (e) {
-      // Handle any exceptions that occur during permission request
-      if (kDebugMode) {
-        print('Error requesting permissions: $e');
-      }
-      throw Exception('Failed to request necessary permissions.');
-    }
-    finally {
-      _isRequestingPermission = false;
-    }
-    // Optionally check Bluetooth/Wi-Fi permissions if needed
-  }
+  static Stream<Map<String, dynamic>> get fileEventsStream =>
+      _lan.fileEventStream;
 
+  static Stream<Map<String, dynamic
+  >?> get fileTransferProgressStream =>
+      _lan.fileTransferProgressStream;
+
+  // Discovery/Advertising (LAN: only discovery is needed)
   static Future<void> startDiscovery() async {
-    await _ensurePermissions();
     final settingsBox = Hive.box('settings');
     final userId = settingsBox.get('userId');
     final displayName = settingsBox.get('displayName', defaultValue: 'AirChatUser');
-    await _channel.invokeMethod('startDiscovery', {'userId': userId, 'name': displayName});
+    // Use a fixed port or generate one if needed
+    final tcpPort = settingsBox.get('tcpPort', defaultValue: 40402);
+    await _lan.startService(userId: userId, name: displayName, tcpPort: tcpPort);
+  }
+
+  static Future<void> startServer()async{
+    await _lan.startServer();
   }
 
   static Future<void> stopDiscovery() async {
-    await _channel.invokeMethod('stopDiscovery');
+    _lan.stopService();
   }
 
+  // Advertising is not needed for LAN, but keep for UI compatibility
   static Future<void> startAdvertising() async {
-    await _ensurePermissions();
-    final settingsBox = Hive.box('settings');
-    final userId = settingsBox.get('userId');
-    final displayName = settingsBox.get('displayName', defaultValue: 'AirChatUser');
-    final endpointInfo = jsonEncode({'name': displayName, 'userId': userId});
-    await _channel.invokeMethod('startAdvertising', {'endpointInfo': endpointInfo});
+    // No-op for LAN
   }
 
   static Future<void> stopAdvertising() async {
-    await _channel.invokeMethod('stopAdvertising');
+    // No-op for LAN
   }
 
+  // Connect to device (not needed for LAN, but keep for UI compatibility)
   static Future<void> connectToDevice(String userId) async {
-    await _channel.invokeMethod('connectToDevice', {'userId': userId});
+    final peer = await _findPeerById(userId);
+    if (peer == null) return;
+    await _lan.connectToPeer(peer);
   }
 
-  static Future<int> sendMessage(String userId, String message) async {
-    final result = await _channel.invokeMethod('sendMessage', {'userId': userId, 'message': message});
-    return result as int;
+  // Send a message to a peer
+  static Future<String> sendMessage(String id, String userId, String message) async {
+    final peer = await _findConnectedPeerById(userId);
+    if (peer == null) throw Exception('Peer not found');
+    await _lan.sendMessage(id, peer, message);
+    // Return a timestamp as a fake message ID for compatibility
+    return DateTime.now().toIso8601String();
   }
 
-  static Future<int> sendFile(String userId, String filePath, String fileName) async {
-    final result = await _channel.invokeMethod('sendFile', {'userId': userId, 'filePath': filePath, 'fileName': fileName});
-    return result as int;
+  // Send a file to a peer
+  static Future<String> sendFile(String id, String userId, String filePath, String fileName) async {
+    final peer = await _findConnectedPeerById(userId);
+    if (peer == null) throw Exception('Peer not found');
+    await _lan.sendFile(id, peer, filePath, fileName: fileName);
+    // Return a timestamp as a fake file ID for compatibility
+    return DateTime.now().toIso8601String();
   }
 
-  static Future<String?> getEndpointIdForUserId(String userId) async {
-    final result = await _channel.invokeMethod('getEndpointIdForUserId', {'userId': userId});
-    return result as String?;
-  }
-
-  // New methods for getting connection state
+  // Get connected users (for UI refresh)
   static Future<List<Map<String, dynamic>>> getConnectedUsers() async {
+    // For LAN, all discovered peers are considered available
+    final peers = _lan.discoveredPeers.value;
+    return peers.map((p) => {'id': p.userId, 'name': p.name}).toList();
+  }
+
+  // Get discovered users (for UI refresh)
+  static Future<List<Map<String, dynamic>>> getDiscoveredUsers() async {
+    final peers = _lan.discoveredPeers.value;
+    return peers.map((p) => {'id': p.userId, 'name': p.name}).toList();
+  }
+
+  // Helper to find a peer by userId
+  static Future<LanPeer?> _findPeerById(String userId) async {
+    final peers = _lan.discoveredPeers.value;
     try {
-      final result = await _channel.invokeMethod('getConnectedUsers');
-      print('Connected users: $result');
-      if (result != null) {
-        return List<Map<String, dynamic>>.from(
-            (result as List).map((e) => Map<String, dynamic>.from(e as Map))
-        );
-      }
-      return [];
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error getting connected users: $e');
-      }
-      return [];
+      return peers.firstWhere((p) => p.userId == userId);
+    } catch (_) {
+      return null;
     }
   }
-
- static Future<List<Map<String, dynamic>>> getDiscoveredUsers() async {
+  static Future<LanPeer?> _findConnectedPeerById(String userId) async {
+    final peers = _lan.connectedPeers;
     try {
-      final result = await _channel.invokeMethod('getDiscoveredUsers');
-      print(result);
-      if (result != null) {
-        return List<Map<String, dynamic>>.from(
-          (result as List).map((e) => Map<String, dynamic>.from(e as Map))
-        );
-      }
-      return [];
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error getting discovered users: $e');
-      }
-      return [];
+      return peers.firstWhere((p) => p.userId == userId);
+    } catch (_) {
+      return null;
     }
   }
 } 

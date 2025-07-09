@@ -33,7 +33,7 @@ class ChatMessage extends HiveObject {
   String? mimeType;
 
   @HiveField(9)
-  int id;
+  String id;
 
   @HiveField(10)
   double? transferProgress;

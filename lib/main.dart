@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:media_kit/media_kit.dart';
 import 'models/chat_user.dart';
 import 'models/chat_message.dart';
 import 'theme.dart';
@@ -12,9 +13,11 @@ import 'providers/connection_state_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
   await Hive.initFlutter();
   Hive.registerAdapter(ChatUserAdapter());
   Hive.registerAdapter(ChatMessageAdapter());
+  // await Hive.deleteBoxFromDisk('chat_users');
   await Hive.openBox<ChatUser>('chat_users');
   var settingsBox = await Hive.openBox('settings');
   if (settingsBox.get('userId') == null) {
