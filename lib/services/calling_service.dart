@@ -1,137 +1,228 @@
-// 📞 LAN Calling Service in Dart (WhatsApp-like Flow)
-// Dependencies: record, just_audio, dart:io
-
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:record/record.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:path_provider/path_provider.dart';
+import 'dart:async';
+import 'package:audio_session/audio_session.dart';
+
+// --- LivePcmAudioSource for real-time streaming ---
+class LivePcmAudioSource extends StreamAudioSource {
+  final int sampleRate;
+  final int channels;
+  final bool forStreaming;
+  bool _headerInjected = false;
+  final StreamController<List<int>> _streamController =
+      StreamController<List<int>>.broadcast();
+
+  LivePcmAudioSource({
+    this.sampleRate = 44100,
+    this.channels = 2,
+    this.forStreaming = true,
+  });
+
+  /// Call this to inject a new chunk of PCM data.
+  void addData(Uint8List pcmChunk) {
+    if (!_headerInjected) {
+      final header = _createWavHeader(
+        sampleRate: sampleRate,
+        channels: channels,
+        bitsPerSample: 16,
+        pcmDataLength: pcmChunk.length, // can be 0 or placeholder for streaming
+        forStreaming: true,
+      );
+      _streamController.add(Uint8List.fromList([...header, ...pcmChunk]));
+      _headerInjected = true;
+      return;
+    }
+
+    _streamController.add(pcmChunk);
+  }
+
+  /// Generates a standard WAV header (RFC-compliant).
+  List<int> _createWavHeader({
+    required int sampleRate,
+    required int channels,
+    required int bitsPerSample,
+    required int pcmDataLength,
+    bool forStreaming = false,
+  }) {
+    final byteRate = (sampleRate * channels * bitsPerSample) ~/ 8;
+    final blockAlign = (channels * bitsPerSample) ~/ 8;
+    final dataSize = forStreaming ? 0xFFFFFFFF : pcmDataLength;
+    final fileSize = forStreaming ? 0xFFFFFFFF : (pcmDataLength + 36);
+
+    return [
+      ...ascii.encode('RIFF'),
+      ..._intToLE(fileSize, 4),
+      ...ascii.encode('WAVE'),
+      ...ascii.encode('fmt '),
+      ..._intToLE(16, 4),
+      ..._intToLE(1, 2),
+      ..._intToLE(channels, 2),
+      ..._intToLE(sampleRate, 4),
+      ..._intToLE(byteRate, 4),
+      ..._intToLE(blockAlign, 2),
+      ..._intToLE(bitsPerSample, 2),
+      ...ascii.encode('data'),
+      ..._intToLE(dataSize, 4),
+    ];
+  }
+
+  List<int> _intToLE(int value, int length) {
+    return List.generate(length, (i) => (value >> (8 * i)) & 0xFF);
+  }
+
+  Future<void> close() async {
+    await _streamController.close();
+  }
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    return StreamAudioResponse(
+      sourceLength: null,
+      contentLength: null,
+      offset: null,
+      stream: _streamController.stream,
+      contentType: 'audio/wav',
+    );
+  }
+}
 
 class LanCallService {
-  final _recorder = AudioRecorder();
+// 1. Private constructor
+  LanCallService._privateConstructor();
+
+  // 2. The single instance
+  static final LanCallService _instance = LanCallService._privateConstructor();
+
+  // 3. Factory constructor returns the same instance
+  factory LanCallService() {
+    return _instance;
+  }
+
+  final AudioRecorder _recorder = AudioRecorder();
   final AudioPlayer _player = AudioPlayer();
   RawDatagramSocket? _udpSocket;
   InternetAddress? _targetAddress;
-  int _port = 5555;
-  File? _recordingFile;
-  IOSink? _sink;
-  bool _isCalling = false;
-  bool _isReceiving = false;
+  RawDatagramSocket? _receiveSocket;
+  RawDatagramSocket? _sendSocket;
+  final int _port = 5555;
+  bool _isActive = false;
+  LivePcmAudioSource? _liveSource;
+  StreamSubscription? _micSub;
 
-  /// Caller initiates the call
-  Future<void> startCall(String targetIp) async {
-    _targetAddress = InternetAddress(targetIp);
-    _isCalling = true;
-    _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
-    await _startRecording();
+  /// Request microphone permission, throw if denied
+  Future<void> _ensureMicPermission() async {
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      throw Exception('Microphone permission not granted');
+    }
   }
 
-  /// Callee listens for incoming call
-  Future<void> listenForCalls() async {
-    _udpSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, _port);
-    _isReceiving = true;
-    _recordingFile = await _createTempWavFile();
-    _sink = _recordingFile!.openWrite(mode: FileMode.write);
+  Future<void> startBidirectionalCall(String targetIp) async {
+    try {
+      await _ensureMicPermission();
+      _targetAddress = InternetAddress(targetIp);
+      _sendSocket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      _receiveSocket =
+          await RawDatagramSocket.bind(InternetAddress.anyIPv4, _port);
 
-    // Write WAV header placeholder
-    _sink!.add(_generateWavHeader(0));
+      _isActive = true;
 
-    _udpSocket!.listen((event) async {
-      if (event == RawSocketEvent.read) {
-        final datagram = _udpSocket!.receive();
-        if (datagram != null) {
-          _sink!.add(datagram.data);
+      // Start recording and sending
+      _recorder
+          .startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits))
+          .then((stream) {
+        _micSub = stream.listen(
+          (chunk) {
+            if (_isActive && _targetAddress != null) {
+              _sendSocket?.send(chunk, _targetAddress!, _port);
+            }
+          },
+          onDone: () => log('done streaming'),
+        );
+      });
+
+      _liveSource = LivePcmAudioSource();
+
+      // Start receiving and playing
+      _receiveSocket!.listen((event) async {
+        if (event == RawSocketEvent.read) {
+          final datagram = _receiveSocket!.receive();
+          if (datagram != null) {
+            _liveSource?.addData(datagram.data);
+          }
         }
-      }
-    });
+      });
+      await _player.setAudioSource(
+        _liveSource!,
+        preload: false,
+      );
+      await _player.play();
+    } catch (e) {
+      log('Error: $e');
+    }
+  }
+
+  /// Mute or unmute the microphone (stop sending audio)
+  void setMuted(bool muted) {
+    if (muted) {
+      _micSub?.pause();
+    } else {
+      _micSub?.resume();
+    }
+  }
+
+  /// Returns true if the microphone is currently muted (not sending audio)
+  bool get isMuted => _micSub?.isPaused ?? false;
+
+  /// Enable or disable speaker output (if supported)
+  /// Note: This is platform-dependent and may require additional plugins for full support.
+  Future<void> setSpeakerOn(bool enabled) async {
+    _player.setVolume(1);
+    // If using just_audio, you may need to use platform channels or a plugin like flutter_audio_manager
+    // This is a placeholder for actual speaker control logic.
+    // For now, this does nothing.
+    // Example (if using flutter_audio_manager):
+    // await AudioManager.instance.changeToSpeaker(enabled);
   }
 
   /// Stop recording and close the call
   Future<void> endCall() async {
-    _isCalling = false;
+    _isActive = false;
+    await _micSub?.cancel();
     await _recorder.stop();
+    await _player.stop();
+    await _liveSource?.close();
+    _sendSocket?.close();
+    _receiveSocket?.close();
     _udpSocket?.close();
   }
 
-  /// Stop receiving and play received audio
-  Future<void> stopReceiving() async {
-    _isReceiving = false;
-    await _sink?.flush();
-    await _sink?.close();
-    _udpSocket?.close();
+  Future<void> setSpeakerMode(bool enable) async {
+    final session = await AudioSession.instance;
 
-    // Rewrite WAV header with actual data length
-    final file = _recordingFile!;
-    final data = await file.readAsBytes();
-    final header = _generateWavHeader(data.length - 44);
-    final updated = BytesBuilder()
-      ..add(header)
-      ..add(data.sublist(44));
-    await file.writeAsBytes(updated.toBytes(), flush: true);
+    // Configure for playback (forces speaker on Android/iOS)
+    await session.configure(
+      AudioSessionConfiguration(
+        avAudioSessionCategory:
+            AVAudioSessionCategory.playAndRecord, // For call-like routing
+        avAudioSessionCategoryOptions: enable
+            ? AVAudioSessionCategoryOptions.defaultToSpeaker // Speaker
+            : AVAudioSessionCategoryOptions.mixWithOthers, // Earpiece
+        androidAudioAttributes: AndroidAudioAttributes(
+          usage: enable
+              ? 
+              AndroidAudioUsage.media:AndroidAudioUsage
+                  .voiceCommunication, // Default routing
+          contentType: AndroidAudioContentType.speech,
+        ),
+      ),
+    );
 
-    // Play
-    await _player.setFilePath(file.path);
-    await _player.play();
-  }
-
-  /// Start microphone capture and send data to target
-  Future<void> _startRecording() async {
-    await _recorder.startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits)).then((stream) {
-      stream.listen((chunk) {
-        if (_isCalling && _targetAddress != null) {
-          _udpSocket?.send(chunk, _targetAddress!, _port);
-        }
-      });
-    });
-  }
-
-  /// Create temporary WAV file
-  Future<File> _createTempWavFile() async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/incoming.wav');
-    if (await file.exists()) await file.delete();
-    return file;
-  }
-
-  /// Generate WAV header (PCM 16bit, 1ch, 44100Hz)
-  List<int> _generateWavHeader(int dataLength) {
-    const sampleRate = 44100;
-    const bitsPerSample = 16;
-    const channels = 1;
-    final byteRate = sampleRate * channels * bitsPerSample ~/ 8;
-    final blockAlign = channels * bitsPerSample ~/ 8;
-    final totalLength = 36 + dataLength;
-
-    final header = BytesBuilder();
-    header.add(ascii.encode('RIFF'));
-    header.add(_intToBytes(totalLength));
-    header.add(ascii.encode('WAVE'));
-    header.add(ascii.encode('fmt '));
-    header.add(_intToBytes(16)); // Subchunk1Size
-    header.add([1, 0]); // PCM
-    header.add([channels, 0]);
-    header.add(_intToBytes(sampleRate));
-    header.add(_intToBytes(byteRate));
-    header.add([blockAlign, 0]);
-    header.add([bitsPerSample, 0]);
-    header.add(ascii.encode('data'));
-    header.add(_intToBytes(dataLength));
-    return header.toBytes();
-  }
-
-  List<int> _intToBytes(int value) {
-    return [
-      value & 0xff,
-      (value >> 8) & 0xff,
-      (value >> 16) & 0xff,
-      (value >> 24) & 0xff,
-    ];
+    // Activate session (required for routing changes)
+    await session.setActive(true);
   }
 }
-
-// 🎯 UI layer can now call `LanCallService().startCall(ip)` and `stopReceiving()`
-// Example UI flow:
-// - Show 'Incoming Call' button: triggers `listenForCalls()`
-// - Show 'Call [user]' button: triggers `startCall()`
-// - Add 'Hang up' button: triggers `endCall()` or `stopReceiving()`

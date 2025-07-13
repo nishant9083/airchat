@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:airchat/providers/call_state_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
@@ -50,20 +50,22 @@ class _HomeScreenState extends State<HomeScreen>
     });
     final connProvider =
         Provider.of<ConnectionStateProvider>(context, listen: false);
+    final callProvider = Provider.of<CallStateProvider>(context, listen: false);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await showDisplayNamePrompt(context);
       await _startDiscovery(connProvider);
       await ConnectionService.startServer();
     });
-    _setupEventListeners(connProvider);
+    _setupEventListeners(connProvider, callProvider);
   }
 
-  void _setupEventListeners(ConnectionStateProvider connProvider) {
-    _deviceStream = ConnectionService.discoveredDevicesStream.listen((event) {      
+  void _setupEventListeners(
+      ConnectionStateProvider connProvider, CallStateProvider callProvider) {
+    _deviceStream = ConnectionService.discoveredDevicesStream.listen((event) {
       if (event['type'] == 'found') {
         connProvider.setDiscovered(event['id'], event['name'] ?? 'Unknown');
       }
-      if(event['type']=='off') {
+      if (event['type'] == 'off') {
         connProvider.clearAll();
       }
     }, onError: (e) {
@@ -86,6 +88,9 @@ class _HomeScreenState extends State<HomeScreen>
           messages: [],
         );
         box.put(userId, user);
+      }
+      if (event['type'] == 'call') {
+        return;
       }
       final msg = ChatMessage(
           id: event['timestamp'],
@@ -237,4 +242,3 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 }
-

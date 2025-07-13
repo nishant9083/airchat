@@ -600,14 +600,14 @@ class LanConnectionService implements BaseConnectionService {
       _notifierStream(fileTransferProgress);
 
   @override
-  Future<void> sendMessage(String id, dynamic peer, String message) async {
+  Future<void> sendMessage(String id, dynamic peer, String message, String? type) async {
     if (peer is LanPeer) {
       await _sendMessageInternal(id, peer, {
-        'type': 'message',
+        'type': type??'message',
         'from': userId,
         'name': name,
         'message': message,
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': id,
       });
     } else {
       throw Exception('Invalid peer type');

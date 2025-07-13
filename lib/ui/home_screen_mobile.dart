@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:airchat/models/chat_message.dart';
+import 'package:airchat/providers/call_state_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -9,8 +11,6 @@ import '../services/connection_service.dart';
 import '../providers/connection_state_provider.dart';
 import '../widgets/exit_popup.dart';
 import 'chat_screen.dart';
-
-
 
 class HomeScreenMobile extends StatefulWidget {
   final String? error;
@@ -47,7 +47,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
     await ConnectionService.connectToDevice(user.id);
     if (mounted) {
       await Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => ChatScreen(userId: user.id),
+        builder: (_) => ChatScreen(user: user),
       ));
     }
     connProvider.setInChatUserId(null);
@@ -79,8 +79,8 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
             // }
           }
         },
-        child: Consumer<ConnectionStateProvider>(
-          builder: (context, connProvider, _) {
+        child: Consumer2<ConnectionStateProvider, CallStateProvider>(
+          builder: (context, connProvider, callProvider, _) {
             return Scaffold(
               backgroundColor: Colors.grey[50],
               body: NestedScrollView(
@@ -631,6 +631,8 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                       else if (msgType == 'file')
                         const Icon(Icons.file_present,
                             color: Colors.grey, size: 16)
+                      else if (msgType == 'call')
+                        const Icon(Icons.call,color: Colors.grey, size: 16)
                       else if (msgType == 'text')
                         Expanded(
                           child: Text(
@@ -713,53 +715,168 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
   }
 
   Widget _buildCallsTab(ColorScheme colorScheme) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+    return ValueListenableBuilder(
+      valueListenable: widget.userBox.listenable(),
+      builder: (context, Box<ChatUser> box, _) {
+        // Gather all call messages from all users, and keep a reference to the user for each message
+        final List<Map<String, dynamic>> callEntries = [];
+        for (final user in box.values) {
+          for (final msg in user.messages) {
+            if (msg.type == 'call') {
+              callEntries.add({'msg': msg, 'user': user});
+            }
+          }
+        }
+        // Sort by timestamp descending
+        callEntries
+            .sort((a, b) => b['msg'].timestamp.compareTo(a['msg'].timestamp));
+
+        if (callEntries.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.call,
+                        size: 64,
+                        color: colorScheme.primary,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No Calls Yet',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Your recent calls will appear here.',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.call,
-                  size: 64,
-                  color: colorScheme.primary,
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: callEntries.length,
+          itemBuilder: (context, idx) {
+            final msg = callEntries[idx]['msg'] as ChatMessage;
+            final user = callEntries[idx]['user'] as ChatUser?;
+            final isMe = msg.isMe;
+            final isMissed = msg.duration == null || msg.duration!.isEmpty;
+            final callTypeIcon = isMe ? Icons.call_made : Icons.call_received;
+            final callTypeColor = isMe
+                ? colorScheme.primary
+                : (isMissed ? Colors.red : Colors.green);
+
+            return Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
+                  child: Icon(
+                    callTypeIcon,
+                    color: callTypeColor,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Voice & Video Calls',
+                title: Text(
+                  user?.name ?? 'Unknown',
                   style: TextStyle(
-                    fontSize: 20,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.primary,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Coming soon!',
+                subtitle: Builder(
+                  builder: (_) {
+                    if (isMe) {
+                      if (isMissed) {
+                        return Text(
+                          'Not Answered',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      } else {
+                        return Text(
+                          'Outgoing • ${msg.duration}',
+                          style: TextStyle(
+                            color: colorScheme.primary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      }
+                    } else {
+                      if (isMissed) {
+                        return Text(
+                          'Missed',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      } else {
+                        return Text(
+                          'Incoming • ${msg.duration}',
+                          style: TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+                trailing: Text(
+                  _formatCallTimestamp(msg.timestamp),
                   style: TextStyle(
                     color: Colors.grey[600],
-                    fontSize: 16,
+                    fontSize: 12,
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
+              ),
+            );
+          },
+        );
+      },
     );
+  }
+
+  String _formatCallTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    if (now.difference(timestamp).inDays == 0) {
+      // Today: show time
+      return "${timestamp.hour.toString().padLeft(2, '0')}:${timestamp.minute.toString().padLeft(2, '0')}";
+    } else if (now.difference(timestamp).inDays == 1) {
+      return "Yesterday";
+    } else {
+      return "${timestamp.day}/${timestamp.month}/${timestamp.year}";
+    }
   }
 
   Widget _buildErrorState(String error, ColorScheme colorScheme) {

@@ -29,13 +29,14 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       mimeType: fields[8] as String?,
       transferProgress: fields[10] as double?,
       status: fields[11] as int?,
+      duration: fields[12] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ChatMessage obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.senderId)
       ..writeByte(1)
@@ -59,7 +60,9 @@ class ChatMessageAdapter extends TypeAdapter<ChatMessage> {
       ..writeByte(10)
       ..write(obj.transferProgress)
       ..writeByte(11)
-      ..write(obj.status);
+      ..write(obj.status)
+      ..writeByte(12)
+      ..write(obj.duration);
   }
 
   @override

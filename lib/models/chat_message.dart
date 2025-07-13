@@ -21,7 +21,7 @@ class ChatMessage extends HiveObject {
   bool isRead;
 
   @HiveField(5)
-  String type; // 'text', 'image', 'file'
+  String type; // 'text', 'image', 'file', 'call'
 
   @HiveField(6)
   String? fileName;
@@ -41,6 +41,9 @@ class ChatMessage extends HiveObject {
   @HiveField(11)
   int? status; // 1: success, 2: failure, 3: in_progress , 4: canceled
 
+  @HiveField(12)
+  String? duration;
+
   ChatMessage({
     required this.id,
     required this.senderId,
@@ -53,6 +56,7 @@ class ChatMessage extends HiveObject {
     this.filePath,
     this.mimeType,
     this.transferProgress,
-    this.status
+    this.status,
+    this.duration
   });
 } 
