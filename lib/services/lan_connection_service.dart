@@ -9,24 +9,24 @@ import 'package:flutter/foundation.dart';
 import 'lan_peer.dart';
 import 'base_connection_service.dart';
 import 'package:uuid/uuid.dart';
-
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 Future<String> getReceivedFilesDir() async {
   if (Platform.isAndroid) {
     // Use app document directory for mobile
     final dir = await getExternalStorageDirectory();
-    return '${dir?.path}/received_files';
+    return '${dir?.path}';
   } else if (Platform.isIOS) {
     // Use app document directory for mobile
     final dir = await getApplicationDocumentsDirectory();
-    return '${dir.path}/received_files';
+    return dir.path;
   } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     // Use user's home directory for desktop
     final home = Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '.';
-    return '$home/received_files';
+    return p.join(home,'airchat');
   } else {
     // Fallback to current directory
     return './received_files';
@@ -204,10 +204,14 @@ class LanConnectionService implements BaseConnectionService {
 
       // Get dynamic broadcast address
       final broadcastAddress = await _getBroadcastAddress();
+      if(broadcastAddress == null) return;
 
       // Broadcast to local network
-      _udpSocket!.send(bytes, InternetAddress(broadcastAddress!), udpPort);
-    } catch (e) {
+      _udpSocket!.send(bytes, InternetAddress(broadcastAddress), udpPort);
+    } on SocketException catch(e){
+      log('Error in socket: $e');
+    }
+     catch (e) {
       log('Error in broadcasting: $e');
     }
   }
@@ -323,8 +327,7 @@ class LanConnectionService implements BaseConnectionService {
   // Unified arbitration and socket handler (single listen)
   Future<void> _arbitrateAndHandleSocket(Socket socket,
       {required bool isOutgoing, LanPeer? peer, required int  myTimestamp}) async {
-    try {      
-      print(myTimestamp);
+    try {            
       final myConnId = _uuid.v4();
       final myInit = {
         'type': 'connection-init',
@@ -385,7 +388,7 @@ class LanConnectionService implements BaseConnectionService {
             final enc = jsonDecode(utf8.decode(value)) as Map<String, dynamic>;
             final decrypted = await EncryptionService().decrypt(
               nonce: enc['nonce']!,
-              cipherText: enc['cipherText']!,
+              cipherText: List<int>.from(enc['cipherText']!),
               mac: enc['mac']!,
             );
             final map = jsonDecode(utf8.decode(decrypted));
@@ -406,9 +409,28 @@ class LanConnectionService implements BaseConnectionService {
             receivingFile = true;
             received = 0;
             //Output file
-            final outDir = Directory(await receivedFilesDir);
+            final outDir = Directory('${await receivedFilesDir}/received_files');
             if (!await outDir.exists()) await outDir.create(recursive: true);
-            outFile = File('${outDir.path}/$fileName');
+
+            // Handle if same path exists already
+            String baseName = fileName ?? 'received_file';
+            String filePath = '${outDir.path}/$baseName';
+            int copyIndex = 1;
+            outFile = File(filePath);
+            while (await outFile!.exists()) {
+              // Insert (1), (2), etc. before file extension
+              final extIndex = baseName.lastIndexOf('.');
+              String newName;
+              if (extIndex != -1) {
+                newName = '${baseName.substring(0, extIndex)} ($copyIndex)${baseName.substring(extIndex)}';
+              } else {
+                newName = '$baseName ($copyIndex)';
+              }
+              filePath = '${outDir.path}/$newName';
+              outFile = File(filePath);
+              copyIndex++;
+            }
+
             map.addEntries([MapEntry('filePath', outFile!.path)]);
             // Emit only the new file event
             _fileController.add(map);
@@ -434,7 +456,7 @@ class LanConnectionService implements BaseConnectionService {
             try {
               final decryptedBytes = await EncryptionService().decrypt(
                 nonce: nonce!,
-                cipherText: base64Encode(encryptedBytes),
+                cipherText: encryptedBytes.toList(),
                 mac: mac!,
               );
 
@@ -521,7 +543,7 @@ class LanConnectionService implements BaseConnectionService {
     final plainBytes = await file.readAsBytes();
     final encryptedMap = await EncryptionService().encrypt(plainBytes);
 
-    final encryptedBytes = base64Decode(encryptedMap['cipherText']!);
+    final encryptedBytes = encryptedMap['cipherText']! as List<int>;
     final nonce = encryptedMap['nonce']!;
     final mac = encryptedMap['mac']!;
 
@@ -540,7 +562,7 @@ class LanConnectionService implements BaseConnectionService {
     _sendTLV(socket, TYPE_FILE_HEADER, utf8.encode(jsonEncode(header)));
     // final raf = file.openRead();
     int sent = 0;
-    const chunkSize = 8192;
+    const chunkSize = 65536;
     for (int i = 0; i < encryptedBytes.length; i += chunkSize) {
       final end = (i + chunkSize < encryptedBytes.length)
           ? i + chunkSize
@@ -630,7 +652,7 @@ class LanConnectionService implements BaseConnectionService {
     try {
       final myTimestamp = DateTime.now().millisecondsSinceEpoch;
       final socket = await Socket.connect(peer.ip, peer.port);
-      await _arbitrateAndHandleSocket(socket,
+       _arbitrateAndHandleSocket(socket,
           isOutgoing: true, peer: peer, myTimestamp: myTimestamp);
     } catch (e) {
       log('Error in connection: $e');

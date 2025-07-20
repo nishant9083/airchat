@@ -34,9 +34,9 @@ Future<void> pickImage(
       );
       user.messages.add(msg);
       user.save();
-      await ConnectionService.sendFile(id, userId, picked.path, picked.name);
       // Send image file via Nearby
       WidgetsBinding.instance.addPostFrameCallback((_) => scrollToBottom());
+      ConnectionService.sendFile(id, userId, picked.path, picked.name);
     }
   } catch (e) {
     if (kDebugMode) {
@@ -74,8 +74,8 @@ Future<void> pickVideo(
       );
       user.messages.add(msg);
       user.save();
-      await ConnectionService.sendFile(id, userId, picked.path, picked.name);
       WidgetsBinding.instance.addPostFrameCallback((_) => scrollToBottom());
+      ConnectionService.sendFile(id, userId, picked.path, picked.name);
     }
   } catch (e) {
     if (kDebugMode) {
@@ -115,10 +115,10 @@ Future<void> pickFile(
       );
       user.messages.add(msg);
       user.save();
-      await ConnectionService.sendFile(
-          id, userId, result.files.single.path!, result.files.single.name);
       // Send file via Nearby
       WidgetsBinding.instance.addPostFrameCallback((_) => scrollToBottom());
+      ConnectionService.sendFile(
+          id, userId, result.files.single.path!, result.files.single.name);
     }
   } catch (e) {
     if (kDebugMode) {
@@ -155,9 +155,9 @@ Future<void> openCamera(
       );
       user.messages.add(msg);
       user.save();
-      await ConnectionService.sendFile(id, userId, picked.path, picked.name);
       // Send image file via Nearby
       WidgetsBinding.instance.addPostFrameCallback((_) => scrollToBottom());
+      ConnectionService.sendFile(id, userId, picked.path, picked.name);
     }
   } catch (e) {
     if (kDebugMode) {

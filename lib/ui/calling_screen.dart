@@ -66,11 +66,6 @@ class _CallScreenState extends State<CallScreen>
     });
   }
 
-  String _formatDuration(Duration d) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    return '${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds % 60)}';
-  }
-
   Future<void> _acceptCall(CallStateProvider callProvider) async {
     callProvider.acceptCall();
     await ConnectionService.sendCallAccept(widget.user.id);
@@ -80,7 +75,9 @@ class _CallScreenState extends State<CallScreen>
     await ConnectionService.updateCallDuration(
         callProvider.currentCallUserId!,
         callProvider.callId!,
-        callProvider.callState == CallState.inCall?callProvider.formattedCallDuration:null,
+        callProvider.callState == CallState.inCall
+            ? callProvider.formattedCallDuration
+            : null,
         callProvider.callDirection!);
     callProvider.endCall();
     await ConnectionService.sendCallReject(widget.user.id);
@@ -92,54 +89,13 @@ class _CallScreenState extends State<CallScreen>
     await ConnectionService.updateCallDuration(
         callProvider.currentCallUserId!,
         callProvider.callId!,
-        callProvider.callState == CallState.inCall?callProvider.formattedCallDuration:null,
+        callProvider.callState == CallState.inCall
+            ? callProvider.formattedCallDuration
+            : null,
         callProvider.callDirection!);
     callProvider.endCall();
     await ConnectionService.sendCallEnd(widget.user.id, callProvider.callId!);
     await _callService.endCall();
-  }
-
-  Color _getBgColor(CallState callState) {
-    switch (callState) {
-      case CallState.ringing:
-        return Colors.blue[700]!;
-      case CallState.calling:
-        return Colors.orange[700]!;
-      case CallState.inCall:
-        return Colors.green[700]!;
-      default:
-        return Colors.grey[900]!;
-    }
-  }
-
-  IconData _getStatusIcon(CallState callState) {
-    switch (callState) {
-      case CallState.ringing:
-        return Icons.phone_in_talk_rounded;
-      case CallState.calling:
-        return Icons.phone_forwarded_rounded;
-      case CallState.inCall:
-        return Icons.call_rounded;
-      case CallState.ended:
-        return Icons.call_end_rounded;
-      default:
-        return Icons.phone;
-    }
-  }
-
-  String _getStatusText(CallState callState) {
-    switch (callState) {
-      case CallState.ringing:
-        return 'Incoming call...';
-      case CallState.calling:
-        return 'Calling...';
-      case CallState.inCall:
-        return 'In call';
-      case CallState.ended:
-        return 'Call ended';
-      default:
-        return 'Connecting...';
-    }
   }
 
   @override
@@ -455,4 +411,391 @@ class _GlassActionButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// Draggable Overlay for calling screen in desktop
+class DraggableOverlayPositioned extends StatefulWidget {
+  final ChatUser user;
+  final Offset position;
+  final ValueChanged<Offset> onPositionChanged;
+  final VoidCallback onClose;
+
+  const DraggableOverlayPositioned({
+    super.key,
+    required this.user,
+    required this.position,
+    required this.onPositionChanged,
+    required this.onClose,
+  });
+
+  @override
+  State<DraggableOverlayPositioned> createState() =>
+      _DraggableOverlayPositionedState();
+}
+
+class _DraggableOverlayPositionedState
+    extends State<DraggableOverlayPositioned> {
+  late Offset _position;
+  Offset? _dragStart;
+  Offset? _startPosition;
+
+  // Overlay size constants (should match DraggableOverlayWidget)
+  static const double overlayWidth = 320;
+  static const double overlayHeight = 200;
+
+  @override
+  void initState() {
+    super.initState();
+    _position = widget.position;
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    _dragStart = details.globalPosition;
+    _startPosition = _position;
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    if (_dragStart == null || _startPosition == null) return;
+    final delta = details.globalPosition - _dragStart!;
+
+    // Get screen size
+    final Size screenSize = MediaQuery.of(context).size;
+
+    // Calculate new position
+    double newDx = _startPosition!.dx + delta.dx;
+    double newDy = _startPosition!.dy + delta.dy;
+
+    // Clamp to screen bounds
+    newDx = newDx.clamp(0.0, screenSize.width - overlayWidth);
+    newDy = newDy.clamp(0.0, screenSize.height - overlayHeight);
+
+    setState(() {
+      _position = Offset(newDx, newDy);
+    });
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    widget.onPositionChanged(_position);
+    _dragStart = null;
+    _startPosition = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant DraggableOverlayPositioned oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.position != oldWidget.position) {
+      _position = widget.position;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: _position.dx,
+      top: _position.dy,
+      child: GestureDetector(
+        onPanStart: _onPanStart,
+        onPanUpdate: _onPanUpdate,
+        onPanEnd: _onPanEnd,
+        child: DraggableOverlayWidget(
+          user: widget.user,
+          onClose: widget.onClose,
+        ),
+      ),
+    );
+  }
+}
+
+// The draggable overlay widget (compact calling screen for desktop, uses provider)
+class DraggableOverlayWidget extends StatefulWidget {
+  final ChatUser user;
+  final VoidCallback onClose;
+  const DraggableOverlayWidget(
+      {super.key, required this.onClose, required this.user});
+
+  @override
+  State<DraggableOverlayWidget> createState() => _DraggableOverlayWidgetState();
+}
+
+class _DraggableOverlayWidgetState extends State<DraggableOverlayWidget> {
+  final LanCallService _callService = LanCallService();
+  bool _isMuted = false;
+  Timer? _uiTimer;
+  bool _wasInCall = false;
+
+  @override
+  void dispose() {
+    _uiTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startUiTimer() {
+    _uiTimer?.cancel();
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<void> _acceptCall(
+      CallStateProvider callProvider, ChatUser user) async {
+    callProvider.acceptCall();
+    await ConnectionService.sendCallAccept(user.id);
+  }
+
+  Future<void> _rejectCall(
+      CallStateProvider callProvider, ChatUser user) async {
+    await ConnectionService.updateCallDuration(
+        callProvider.currentCallUserId!,
+        callProvider.callId!,
+        callProvider.callState == CallState.inCall
+            ? callProvider.formattedCallDuration
+            : null,
+        callProvider.callDirection!);
+    callProvider.endCall();
+    await ConnectionService.sendCallReject(user.id);
+    await _callService.endCall();
+  }
+
+  Future<void> _endCall(CallStateProvider callProvider, ChatUser user) async {
+    await ConnectionService.updateCallDuration(
+        callProvider.currentCallUserId!,
+        callProvider.callId!,
+        callProvider.callState == CallState.inCall
+            ? callProvider.formattedCallDuration
+            : null,
+        callProvider.callDirection!);
+    callProvider.endCall();
+    await ConnectionService.sendCallEnd(user.id, callProvider.callId!);
+    await _callService.endCall();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.user;
+    final callProvider = Provider.of<CallStateProvider>(context);
+    final callState = callProvider.callState;
+    final inCall = callState == CallState.inCall;
+    final isIncoming = callState == CallState.ringing;
+    final callStartTime = callProvider.callStartTime;
+    final userId = callProvider.currentCallUserId;
+    if (userId == null) return const SizedBox.shrink();
+    Duration callDuration = Duration.zero;
+    if (inCall && callStartTime != null) {
+      callDuration = DateTime.now().difference(callStartTime);
+    }
+    // Start/stop UI timer on call state change
+    if (inCall && !_wasInCall) {
+      _startUiTimer();
+      _wasInCall = true;
+    } else if (!inCall && _wasInCall) {
+      _uiTimer?.cancel();
+      _wasInCall = false;
+    }
+    final Color bgColor = _getBgColor(callState);
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 320,
+        height: 200,
+        decoration: BoxDecoration(
+          color: bgColor.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.18),
+              blurRadius: 18,
+              spreadRadius: 2,
+            ),
+          ],
+          border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10), width: 1.2),
+        ),
+        child: Column(
+          children: [
+            // Top bar with close button and draggable area
+            MouseRegion(
+              cursor: SystemMouseCursors.move,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0, right: 8.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.close,
+                          color: Colors.white, size: 22),
+                      onPressed: () {
+                        callProvider.setCallingScreen(false);
+                        widget.onClose();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Avatar and name
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(width: 18),
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: Colors.white,
+                  child: Text(
+                    user.name.isNotEmpty ? user.name[0].toUpperCase() : "?",
+                    style: TextStyle(
+                      color: bgColor,
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _getStatusText(callState),
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (inCall && callStartTime != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatDuration(callDuration),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+            ),
+            const Spacer(),
+            // Controls
+            if (isIncoming) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _GlassActionButton(
+                    icon: Icons.call_end,
+                    color: Colors.red[700]!,
+                    label: 'Reject',
+                    onTap: () async {
+                      await _rejectCall(callProvider, user);
+                    },
+                  ),
+                  const SizedBox(width: 24),
+                  _GlassActionButton(
+                    icon: Icons.call,
+                    color: Colors.green[600]!,
+                    label: 'Accept',
+                    onTap: () async {
+                      await _acceptCall(callProvider, user);
+                    },
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (callProvider.callState == CallState.inCall)
+                    _GlassActionButton(
+                      icon: _isMuted ? Icons.mic_off : Icons.mic,
+                      color: Colors.white,
+                      label: _isMuted ? 'Unmute' : 'Mute',
+                      onTap: () {
+                        setState(() {
+                          _isMuted = !_isMuted;
+                          _callService.setMuted(_isMuted);
+                        });
+                      },
+                      isActive: _isMuted,
+                    ),
+                  const SizedBox(width: 18),
+                  _GlassActionButton(
+                    icon: Icons.call_end,
+                    color: Colors.red[700]!,
+                    label: 'End',
+                    onTap: () async {
+                      await _endCall(callProvider, user);
+                    },
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Color _getBgColor(CallState callState) {
+  switch (callState) {
+    case CallState.ringing:
+      return Colors.blue[700]!;
+    case CallState.calling:
+      return Colors.orange[700]!;
+    case CallState.inCall:
+      return Colors.green[700]!;
+    default:
+      return Colors.grey[900]!;
+  }
+}
+
+IconData _getStatusIcon(CallState callState) {
+  switch (callState) {
+    case CallState.ringing:
+      return Icons.phone_in_talk_rounded;
+    case CallState.calling:
+      return Icons.phone_forwarded_rounded;
+    case CallState.inCall:
+      return Icons.call_rounded;
+    case CallState.ended:
+      return Icons.call_end_rounded;
+    default:
+      return Icons.phone;
+  }
+}
+
+String _getStatusText(CallState callState) {
+  switch (callState) {
+    case CallState.ringing:
+      return 'Incoming call...';
+    case CallState.calling:
+      return 'Calling...';
+    case CallState.inCall:
+      return 'In call';
+    case CallState.ended:
+      return 'Call ended';
+    default:
+      return 'Connecting...';
+  }
+}
+
+String _formatDuration(Duration d) {
+  String twoDigits(int n) => n.toString().padLeft(2, '0');
+  return '${twoDigits(d.inMinutes)}:${twoDigits(d.inSeconds % 60)}';
 }

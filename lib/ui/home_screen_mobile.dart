@@ -82,7 +82,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
         child: Consumer2<ConnectionStateProvider, CallStateProvider>(
           builder: (context, connProvider, callProvider, _) {
             return Scaffold(
-              backgroundColor: Colors.grey[50],
+              backgroundColor: colorScheme.surface,
               body: NestedScrollView(
                 physics: const NeverScrollableScrollPhysics(),
                 headerSliverBuilder: (context, innerBoxIsScrolled) => [
@@ -100,7 +100,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                                 horizontal: 0, vertical: 0),
                             margin: const EdgeInsets.only(top: 8, bottom: 4),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: colorScheme.surface,
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
@@ -113,8 +113,8 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                             child: Row(
                               children: [
                                 IconButton(
-                                  icon: Icon(Icons.arrow_back_rounded,
-                                      color: Colors.indigoAccent, size: 26),
+                                  icon:
+                                      Icon(Icons.arrow_back_rounded, size: 26),
                                   onPressed: () {
                                     setState(() {
                                       _isSearching = false;
@@ -127,13 +127,13 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                                   child: TextField(
                                     controller: widget.searchController,
                                     autofocus: true,
-                                    cursorColor: Colors.indigoAccent,
+                                    // cursorColor: Colors.indigoAccent,
                                     decoration: InputDecoration(
                                       fillColor: Colors.transparent,
                                       hintText:
                                           'Search for people or messages...',
                                       hintStyle: TextStyle(
-                                        color: Colors.indigoAccent
+                                        color: colorScheme.secondary
                                             .withValues(alpha: 0.6),
                                         fontSize: 17,
                                         fontWeight: FontWeight.w400,
@@ -144,7 +144,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                                               vertical: 12, horizontal: 0),
                                     ),
                                     style: TextStyle(
-                                      color: Colors.indigoAccent,
+                                      // color: Colors.indigoAccent,
                                       fontSize: 18,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -164,7 +164,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                                       ? IconButton(
                                           key: ValueKey('clear'),
                                           icon: Icon(Icons.close_rounded,
-                                              color: Colors.indigoAccent,
+                                              // color: Colors.indigoAccent,
                                               size: 24),
                                           onPressed: () {
                                             setState(() {
@@ -392,7 +392,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colorScheme.secondaryContainer,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -509,7 +509,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colorScheme.secondaryContainer,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -546,28 +546,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                 ),
               ),
             ),
-            if (unreadCount > 0)
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: Text(
-                    unreadCount > 99 ? '99+' : '$unreadCount',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-          ],
+            ],
         ),
         title: Row(
           children: [
@@ -632,7 +611,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                         const Icon(Icons.file_present,
                             color: Colors.grey, size: 16)
                       else if (msgType == 'call')
-                        const Icon(Icons.call,color: Colors.grey, size: 16)
+                        const Icon(Icons.call, color: Colors.grey, size: 16)
                       else if (msgType == 'text')
                         Expanded(
                           child: Text(
@@ -640,9 +619,8 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: unreadCount > 0
-                                  ? Colors.black87
-                                  : Colors.grey,
+                              color:
+                                  unreadCount > 0 ? Colors.black : Colors.grey,
                               fontSize: 13,
                               fontWeight: unreadCount > 0
                                   ? FontWeight.w500
@@ -652,6 +630,23 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                         ),
                       if (msgType != 'text' && msgType.isNotEmpty)
                         const SizedBox(width: 4),
+                      if (unreadCount > 0)
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: Text(
+                            unreadCount > 99 ? '99+' : '$unreadCount',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -739,7 +734,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: colorScheme.secondaryContainer,
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
@@ -794,8 +789,19 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                 ? colorScheme.primary
                 : (isMissed ? Colors.red : Colors.green);
 
-            return Card(
-              margin: const EdgeInsets.symmetric(vertical: 8),
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
@@ -808,7 +814,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                   user?.name ?? 'Unknown',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
+                    // color: colorScheme.primary,
                   ),
                 ),
                 subtitle: Builder(
@@ -818,7 +824,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                         return Text(
                           'Not Answered',
                           style: TextStyle(
-                            color: Colors.red,
+                            color: const Color.fromARGB(255, 137, 1, 1),
                             fontWeight: FontWeight.w500,
                           ),
                         );
@@ -855,7 +861,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
                 trailing: Text(
                   _formatCallTimestamp(msg.timestamp),
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: Colors.grey[400],
                     fontSize: 12,
                   ),
                 ),
@@ -885,7 +891,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
         margin: const EdgeInsets.all(24),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -917,7 +923,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
               error,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.grey[600],
+                // color: Colors.grey[600],
                 fontSize: 14,
               ),
             ),
@@ -933,7 +939,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
         margin: const EdgeInsets.all(24),
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -965,7 +971,7 @@ class _HomeScreenMobile extends State<HomeScreenMobile> {
               'Tap the discover button to find nearby devices',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.grey[600],
+                // color: Colors.grey[600],
                 fontSize: 16,
               ),
             ),

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:airchat/services/overlay_service.dart';
 import 'package:airchat/ui/calling_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -74,11 +77,15 @@ class CallOverlayWidget extends StatelessWidget {
                 child: GestureDetector(
                   onTap: () {
                     callProvider.setCallingScreen(true);
-                    navigatorKey.currentState?.push(
-                      MaterialPageRoute(
-                        builder: (_) => CallScreen(user: user!),
-                      ),
-                    );
+                    if (Platform.isAndroid || Platform.isIOS) {
+                      navigatorKey.currentState?.push(
+                        MaterialPageRoute(
+                          builder: (_) => CallScreen(user: user!),
+                        ),
+                      );
+                    } else {
+                      DraggableOverlayService().showOverlay(user!);
+                    }
                   },
                   child: Container(
                     decoration: BoxDecoration(
@@ -200,12 +207,16 @@ class CallOverlayWidget extends StatelessWidget {
                             label: 'Accept',
                             onTap: () async {
                               callProvider.acceptCall();
-                              if (context.mounted) {
-                                navigatorKey.currentState?.push(
-                                  MaterialPageRoute(
-                                    builder: (_) => CallScreen(user: user!),
-                                  ),
-                                );
+                              if (Platform.isAndroid || Platform.isIOS) {
+                                if (context.mounted) {
+                                  navigatorKey.currentState?.push(
+                                    MaterialPageRoute(
+                                      builder: (_) => CallScreen(user: user!),
+                                    ),
+                                  );
+                                }
+                              } else {
+                                DraggableOverlayService().showOverlay(user!);
                               }
                               await ConnectionService.sendCallAccept(user!.id);
                             },

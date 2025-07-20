@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:developer';
 import 'dart:io';
 import 'package:airchat/providers/call_state_provider.dart';
+import 'package:airchat/utility/notification_util.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
@@ -90,6 +92,10 @@ class _HomeScreenState extends State<HomeScreen>
         box.put(userId, user);
       }
       if (event['type'] == 'call') {
+        if(event['message'] == '__CALL_INVITE__' && !_isAppActive)
+        {
+          NotificationUtil.showIncomingCall(id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF, callerName: event['name']);
+        }
         return;
       }
       final msg = ChatMessage(
@@ -106,6 +112,13 @@ class _HomeScreenState extends State<HomeScreen>
       user.messages.add(msg);
       user.lastSeen = DateTime.now();
       user.save();
+      if(!_isAppActive){
+        NotificationUtil.showNotification(
+          id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+          title: event['name'] ?? 'New Message',
+          body: event['message'] ?? '',
+        );
+      }
     });
 
     _fileSubscription = ConnectionService.fileEventsStream.listen((event) {
@@ -140,43 +153,45 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // @override
-  // void didChangeAppLifecycleState(AppLifecycleState state) {
-  //   super.didChangeAppLifecycleState(state);
-  //   final connProvider =
-  //       Provider.of<ConnectionStateProvider>(context, listen: false);
-  //   switch (state) {
-  //     case AppLifecycleState.resumed:
-  //       setState(() {
-  //         _isAppActive = true;
-  //       });
-  //       _refreshConnectionState(connProvider);
-  //       break;
-  //     case AppLifecycleState.paused:
-  //     case AppLifecycleState.inactive:
-  //     case AppLifecycleState.detached:
-  //     case AppLifecycleState.hidden:
-  //       setState(() {
-  //         _isAppActive = false;
-  //       });
-  //       break;
-  //   }
-  // }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final connProvider =
+        Provider.of<ConnectionStateProvider>(context, listen: false);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        setState(() {
+          _isAppActive = true;
+        });
+        _refreshConnectionState(connProvider);
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        setState(() {
+          _isAppActive = false;
+        });
+        break;
+    }
+  }
 
-  // Future<void> _refreshConnectionState(
-  //     ConnectionStateProvider connProvider) async {
-  //   try {
-  //     final discoveredUsers = await ConnectionService.getDiscoveredUsers();
-  //     connProvider.clearAll();
-  //     for (final user in discoveredUsers) {
-  //       connProvider.setDiscovered(user['id'], user['name']);
-  //     }
-  //   } catch (e) {
-  //     if (kDebugMode) {
-  //       print('Error refreshing connection state: $e');
-  //     }
-  //   }
-  // }
+  Future<void> _refreshConnectionState(
+      ConnectionStateProvider connProvider) async {
+    try {
+      final discoveredUsers = await ConnectionService.getDiscoveredUsers();
+      await ConnectionService.stopDiscovery();
+      await ConnectionService.startDiscovery();
+      connProvider.clearAll();
+      for (final user in discoveredUsers) {
+        connProvider.setDiscovered(user['id'], user['name']);
+      }
+    } catch (e) {
+      
+        log('Error refreshing connection state: $e');
+      
+    }
+  }
 
   @override
   void dispose() {

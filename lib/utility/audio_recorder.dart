@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:airchat/services/lan_connection_service.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:path/path.dart' as p;
 
 class AudioRecorderWidget extends StatefulWidget {
   final Function(String filePath, String fileName) onRecordingComplete;
@@ -65,17 +66,22 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
     if (!widget.isConnected) return;
 
     try {
+      await _audioRecorder.hasPermission();      
       await _requestPermissions();
 
-      final directory = await getApplicationDocumentsDirectory();
+      final path = await getReceivedFilesDir();
+      final directory = Directory(p.join(path, 'sent'));
+      if (!await directory.exists()) await directory.create(recursive: true);
       final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      _recordingPath = '${directory.path}/$fileName';
+      _recordingPath = p.join(directory.path, fileName);
 
       await _audioRecorder.start(
         RecordConfig(
           encoder: AudioEncoder.aacLc,
           bitRate: 128000,
           sampleRate: 44100,
+          noiseSuppress: true,
+          echoCancel: true
         ),
         path: _recordingPath!,
       );
@@ -113,7 +119,7 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
       _pauseNotifier.value = _isPaused;
 
       if (path != null && _recordingPath != null) {
-        final fileName = _recordingPath!.split('/').last;
+        final fileName = _recordingPath!.split(Platform.pathSeparator).last;
         widget.onRecordingComplete(_recordingPath!, fileName);
       }
     } catch (e) {
@@ -146,7 +152,7 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
     }
   }
 
-  void _cancelRecording() async {
+  Future<void> _cancelRecording() async {
     if (!_isRecording) return;
 
     try {
@@ -246,7 +252,8 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
                             color: Colors.white,
                             size: 32,
                           ),
-                          onPressed: isPaused ? _resumeRecording : _pauseRecording,
+                          onPressed:
+                              isPaused ? _resumeRecording : _pauseRecording,
                         );
                       },
                     ),
@@ -272,8 +279,10 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
                         size: 32,
                       ),
                       onPressed: () async {
-                        Navigator.of(context).pop();
-                        _cancelRecording();
+                        await _cancelRecording();
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                        }
                       },
                     ),
                   ],
@@ -304,32 +313,30 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
     return ValueListenableBuilder<bool>(
       valueListenable: _recNotifier,
       builder: (context, isRecording, _) {
-        return 
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-                              shape: const CircleBorder(),
-                              padding: const EdgeInsets.all(12),
-                            ),
-          onPressed: (Platform.isWindows && widget.isConnected && !isRecording)
-              ? () async {
-                  await _startRecording();
-                  if (mounted) _showRecordingBottomSheet();
-                }
-              : null,
-          onLongPress:widget.isConnected && !isRecording
-              ? () async {
-                  await _startRecording();
-                  if (mounted) _showRecordingBottomSheet();
-                }
-              : null,
-              
-               child: Icon(
+        return ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              shape: const CircleBorder(),
+              padding: const EdgeInsets.all(12),
+            ),
+            onPressed:
+                (Platform.isWindows && widget.isConnected && !isRecording)
+                    ? () async {
+                        await _startRecording();
+                        if (context.mounted) _showRecordingBottomSheet();
+                      }
+                    : null,
+            onLongPress: widget.isConnected && !isRecording
+                ? () async {
+                    await _startRecording();
+                    if (context.mounted) _showRecordingBottomSheet();
+                  }
+                : null,
+            child: Icon(
               Icons.mic,
               color: widget.isConnected ? Colors.white : Colors.grey,
               size: 28,
             ));
-        
-       },
+      },
     );
   }
 }

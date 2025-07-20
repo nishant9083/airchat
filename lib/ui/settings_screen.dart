@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -86,14 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildProfileCard(ThemeData theme, ColorScheme colorScheme) {
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            colorScheme.primary.withValues(alpha: .12),
-            colorScheme.secondary.withValues(alpha: 0.08),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: colorScheme.secondaryContainer,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -155,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               filled: true,
               fillColor: colorScheme.surface.withValues(alpha: .7),
               hintText: 'Enter your display name',
-              prefixIcon: const Icon(Icons.person_outline),
+              prefixIcon:  Icon(Icons.person_outline, color: theme.brightness==Brightness.dark?colorScheme.secondaryContainer:colorScheme.primary,),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: BorderSide.none,
@@ -321,10 +316,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final colorScheme = theme.colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings', style: TextStyle(color: Colors.indigoAccent),),
+        title: const Text('Settings', style: TextStyle(),),
         elevation: 0,
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
+        // backgroundColor: colorScheme.surface,
+        // foregroundColor: colorScheme.onSurface,
         centerTitle: true,
       ),
       body: Container(
@@ -334,7 +329,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             _buildProfileCard(theme, colorScheme),
             const SizedBox(height: 32),
-            _buildConnectionPrefsCard(theme, colorScheme),
+            // _buildConnectionPrefsCard(theme, colorScheme),
+            // const SizedBox(height: 32),
+            // Theme toggle section
+            Consumer<ThemeProvider>(
+              builder: (context, themeProvider, _) {
+                return Card(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.brightness_6,  size: 28),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Theme',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                // color: colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Choose your preferred theme mode.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurface.withValues(alpha: .6),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        RadioListTile<ThemeMode>(
+                          value: ThemeMode.light,
+                          groupValue: themeProvider.themeMode,
+                          onChanged: (val) => themeProvider.setThemeMode(ThemeMode.light),
+                          title: const Text('Light'),
+                        ),
+                        RadioListTile<ThemeMode>(
+                          value: ThemeMode.dark,
+                          groupValue: themeProvider.themeMode,
+                          onChanged: (val) => themeProvider.setThemeMode(ThemeMode.dark),
+                          title: const Text('Dark'),
+                        ),
+                        RadioListTile<ThemeMode>(
+                          value: ThemeMode.system,
+                          groupValue: themeProvider.themeMode,
+                          onChanged: (val) => themeProvider.setThemeMode(ThemeMode.system),
+                          title: const Text('System'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
             const SizedBox(height: 32),
             // Add more settings sections here if needed
             Center(

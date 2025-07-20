@@ -160,6 +160,7 @@ class LanCallService {
         _liveSource!,
         preload: false,
       );
+      await setSpeakerMode(false);
       await _player.play();
     } catch (e) {
       log('Error: $e');

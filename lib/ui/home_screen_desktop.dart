@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:airchat/services/connection_service.dart';
+import 'package:airchat/ui/desktop_settings.dart';
 import 'package:airchat/utility/video_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -53,15 +54,14 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
     return Consumer<CallStateProvider>(
       builder: (context, callProvider, _) {
-        // Main UI
         return Consumer<ConnectionStateProvider>(
           builder: (context, connProvider, _) {
             return ValueListenableBuilder(
               valueListenable: widget.userBox.listenable(),
               builder: (context, Box<ChatUser> box, _) {
-                // Filter users by search
                 final users = box.values
                     .where((user) =>
                         _searchQuery.isEmpty ||
@@ -70,7 +70,6 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                             .contains(_searchQuery.toLowerCase()))
                     .toList()
                   ..sort((a, b) => b.lastSeen.compareTo(a.lastSeen));
-                // Discovered users not in Hive
                 final discoveredNotInHive = connProvider.discovered.entries
                     .where((e) =>
                         box.get(e.key) == null &&
@@ -79,7 +78,6 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                 .toLowerCase()
                                 .contains(_searchQuery.toLowerCase())))
                     .toList();
-                // Sidebar list: discovered first, then chats
                 final sidebarList = [
                   ...discoveredNotInHive.map((e) =>
                       {'type': 'discovered', 'id': e.key, 'name': e.value}),
@@ -97,14 +95,15 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                 ];
 
                 final List<ChatMessage> messages = selectedUser?.messages ?? [];
-                // UI
+
+                // Modern, glassy, and more visually appealing UI
                 return Scaffold(
                   backgroundColor: colorScheme.surface,
                   body: Row(
                     children: [
                       // Sidebar
                       Container(
-                        width: 280,
+                        width: 320,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [
@@ -116,45 +115,76 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: .08),
-                              blurRadius: 12,
-                              offset: Offset(2, 0),
+                              color: colorScheme.shadow.withValues(alpha: 0.04),
+                              blurRadius: 16,
+                              offset: const Offset(2, 0),
                             ),
                           ],
+                          // backgroundBlendMode: BlendMode.multiply,
                         ),
                         child: Column(
                           children: [
-                            const SizedBox(height: 32),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset('assets/icon/icon.png',
-                                    width: 40, height: 40),
-                                const SizedBox(width: 12),
-                                const Text(
-                                  'AirChat',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2,
+                            const SizedBox(height: 24),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 24),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.asset(
+                                      'assets/icon/icon.png',
+                                      width: 44,
+                                      height: 44,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(width: 16),
+                                  Text(
+                                    'AirChat',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 30,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.5,
+                                      shadows: [
+                                        Shadow(
+                                          color: colorScheme.primary
+                                              .withValues(alpha: 0.15),
+                                          blurRadius: 8,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: Icon(Icons.settings,
+                                        color: Colors.white),
+                                    tooltip: 'Settings',
+                                    onPressed: () {
+                                      Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                              builder: (builder) =>
+                                                  DesktopSettingsPage()));
+                                    },
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 32),
+                            const SizedBox(height: 24),
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 16),
                               child: TextField(
                                 decoration: InputDecoration(
                                   hintText: 'Search chats...',
-                                  hintStyle: TextStyle(color: Colors.white70),
+                                  hintStyle: TextStyle(
+                                      color: colorScheme.onSurface
+                                          .withValues(alpha: 0.5)),
                                   filled: true,
-                                  fillColor:
-                                      Colors.white.withValues(alpha: .12),
-                                  prefixIcon:
-                                      Icon(Icons.search, color: Colors.white70),
+                                  fillColor: colorScheme.surface,
+                                  prefixIcon: Icon(Icons.search,
+                                      color: colorScheme.onSurface
+                                          .withValues(alpha: 0.5)),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
                                     borderSide: BorderSide.none,
@@ -162,7 +192,7 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                   contentPadding:
                                       const EdgeInsets.symmetric(vertical: 0),
                                 ),
-                                style: const TextStyle(color: Colors.white),
+                                style: TextStyle(color: colorScheme.onSurface),
                                 onChanged: (val) {
                                   setState(() {
                                     _searchQuery = val;
@@ -172,103 +202,132 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                             ),
                             const SizedBox(height: 24),
                             Expanded(
-                              child: ListView.separated(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 8),
-                                itemCount: sidebarList.length,
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 8),
-                                itemBuilder: (context, idx) {
-                                  final item = sidebarList[idx];
-                                  final selected = item['id'] == selectedUserId;
-                                  final isDiscovered =
-                                      item['type'] == 'discovered';
-                                  final isOnline = connProvider.discovered
-                                      .containsKey(item['id']);
-                                  final isConnected =
-                                      connProvider.connectedPeers.any((p) =>
-                                          p.userId == (item['id'] as String));
-                                  final unreadCount = !isDiscovered &&
-                                          item['id'] != null &&
-                                          (item['id'] as String).isNotEmpty &&
-                                          box.containsKey(
-                                              item['id'] as String) &&
-                                          box.get(item['id'] as String) != null
-                                      ? box
-                                          .get(item['id'] as String)!
-                                          .messages
-                                          .where((m) => !m.isMe && !m.isRead)
-                                          .length
-                                      : 0;
+                              child: ScrollConfiguration(
+                                behavior: _NoGlowScrollBehavior(),
+                                child: ListView.separated(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 8),
+                                  itemCount: sidebarList.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 6),
+                                  itemBuilder: (context, idx) {
+                                    final item = sidebarList[idx];
+                                    final selected =
+                                        item['id'] == selectedUserId;
+                                    final isDiscovered =
+                                        item['type'] == 'discovered';
+                                    final isOnline = connProvider.discovered
+                                        .containsKey(item['id']);
+                                    final isConnected =
+                                        connProvider.connectedPeers.any((p) =>
+                                            p.userId == (item['id'] as String));
+                                    final unreadCount = !isDiscovered &&
+                                            item['id'] != null &&
+                                            (item['id'] as String).isNotEmpty &&
+                                            box.containsKey(
+                                                item['id'] as String) &&
+                                            box.get(item['id'] as String) !=
+                                                null
+                                        ? box
+                                            .get(item['id'] as String)!
+                                            .messages
+                                            .where((m) => !m.isMe && !m.isRead)
+                                            .length
+                                        : 0;
 
-                                  String msgType = item['type'] == 'chat'
-                                      ? item['msgType']!
-                                      : '';
-                                  return _SidebarItem(
-                                    item: item,
-                                    selected: selected,
-                                    isDiscovered: isDiscovered,
-                                    isOnline: isOnline,
-                                    isConnected: isConnected,
-                                    unreadCount: unreadCount,
-                                    msgType: msgType,
-                                    box: box,
-                                    idx: idx,
-                                    onTap: () {
-                                      setState(() {
-                                        selectedUserId = item['id'];
-                                        selectedUser = box.get(selectedUserId!);
-                                        selectedChatIndex = idx;
-                                        if (selectedUser != null) {
-                                          _onUserTap(
-                                              selectedUser!, connProvider);
-                                        }
-                                      });
-                                    },
-                                    onDelete: () async {
-                                      await box.delete(item['id'] as String);
-                                      setState(() {
-                                        if (selectedUserId == item['id']) {
-                                          selectedUserId = null;
-                                          selectedUser = null;
-                                        }
-                                      });
-                                    },
-                                  );
-                                },
+                                    String msgType = item['type'] == 'chat'
+                                        ? item['msgType']!
+                                        : '';
+                                    return _SidebarItemModern(
+                                      item: item,
+                                      selected: selected,
+                                      isDiscovered: isDiscovered,
+                                      isOnline: isOnline,
+                                      isConnected: isConnected,
+                                      unreadCount: unreadCount,
+                                      msgType: msgType,
+                                      box: box,
+                                      idx: idx,
+                                      onTap: () async {
+                                        setState(() {
+                                          selectedUserId = item['id'];
+                                          selectedUser =
+                                              box.get(selectedUserId!);
+                                          selectedChatIndex = idx;
+                                          if (selectedUser != null) {
+                                            _onUserTap(
+                                                selectedUser!, connProvider);
+                                          } else {
+                                            widget.userBox.put(
+                                              selectedUserId,
+                                              ChatUser(
+                                                id: selectedUserId!,
+                                                name: item['name']!,
+                                                lastSeen: DateTime.now(),
+                                                messages: [],
+                                              ),
+                                            );
+                                            _onUserTap(
+                                                widget.userBox
+                                                    .get(selectedUserId)!,
+                                                connProvider);
+                                          }
+                                        });
+                                      },
+                                      onDelete: () async {
+                                        await box.delete(item['id'] as String);
+                                        setState(() {
+                                          if (selectedUserId == item['id']) {
+                                            selectedUserId = null;
+                                            selectedUser = null;
+                                          }
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
                               ),
                             ),
                             Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: FloatingActionButton.extended(
-                                heroTag: 'desktop-screen',
-                                onPressed: () {
-                                  if (connProvider.discovering) {
-                                    widget.stopDiscovery();
-                                  } else {
-                                    widget.startDiscovery(connProvider);
-                                  }
-                                },
-                                backgroundColor: connProvider.discovering
-                                    ? Colors.red
-                                    : Colors.white,
-                                icon: Icon(
-                                  connProvider.discovering
-                                      ? Icons.stop
-                                      : Icons.wifi_tethering,
-                                  color: connProvider.discovering
-                                      ? Colors.white
-                                      : colorScheme.primary,
-                                ),
-                                label: Text(
-                                  connProvider.discovering
-                                      ? 'Stop'
-                                      : 'Discover',
-                                  style: TextStyle(
-                                    color: connProvider.discovering
-                                        ? Colors.white
+                              padding: const EdgeInsets.all(18.0),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: connProvider.discovering
+                                        ? Colors.redAccent
                                         : colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    elevation: 0,
                                   ),
+                                  icon: Icon(
+                                    connProvider.discovering
+                                        ? Icons.stop
+                                        : Icons.wifi_tethering_rounded,
+                                    color: colorScheme.onPrimary,
+                                  ),
+                                  label: Text(
+                                    connProvider.discovering
+                                        ? 'Stop Discovering'
+                                        : 'Discover Devices',
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: colorScheme.onPrimary,
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    if (connProvider.discovering) {
+                                      widget.stopDiscovery();
+                                    } else {
+                                      widget.startDiscovery(connProvider);
+                                    }
+                                  },
                                 ),
                               ),
                             ),
@@ -277,102 +336,107 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                       ),
                       // Main chat area
                       Expanded(
-                        child: selectedUser == null
-                            ? Center(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 48.0),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          color: Colors.indigo
-                                              .withValues(alpha: .08),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        padding: const EdgeInsets.all(32),
-                                        child: Icon(
-                                          Icons.forum_outlined,
-                                          size: 72,
-                                          color: Colors.indigoAccent
-                                              .withValues(alpha: .7),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 32),
-                                      Text(
-                                        'No Chat Selected',
-                                        style: TextStyle(
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.indigo[700],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'Choose a conversation from the sidebar\nor start a new chat to begin messaging.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                      const SizedBox(height: 32),
-                                      Icon(
-                                        Icons.arrow_back_ios_new_rounded,
-                                        color: Colors.indigo[200],
-                                        size: 32,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Select a user on the left',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: Colors.indigo[200],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : DesktopChatSection(
-                                user: selectedUser!,
-                                messages: messages,
-                                onBack: () {
-                                  setState(() {
-                                    selectedUserId = null;
-                                    selectedUser = null;
-                                  });
-                                  connProvider.setInChatUserId(null);
-                                },
-                                onInfoToggle: () {
-                                  setState(() {
-                                    showUserInfo = !showUserInfo;
-                                  });
-                                }),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 350),
+                          child: selectedUser == null
+                              ? _NoChatSelectedModern()
+                              : DesktopChatSection(
+                                  key: ValueKey(selectedUserId),
+                                  user: selectedUser!,
+                                  messages: messages,
+                                  onBack: () {
+                                    setState(() {
+                                      selectedUserId = null;
+                                      selectedUser = null;
+                                    });
+                                    connProvider.setInChatUserId(null);
+                                  },
+                                  onInfoToggle: () {
+                                    setState(() {
+                                      showUserInfo = !showUserInfo;
+                                    });
+                                  }),
+                        ),
                       ),
                       // Right panel (user info/status)
                       if (selectedUser != null && showUserInfo)
                         Container(
-                          width: 320,
+                          width: 340,
                           decoration: BoxDecoration(
-                            color: Colors.grey[100],
+                            color: colorScheme.surface,
                             border: Border(
                               left: BorderSide(
-                                  color: Colors.grey.withValues(alpha: .12)),
+                                  color: colorScheme.outline
+                                      .withValues(alpha: 0.13),
+                                  width: 1.5),
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    colorScheme.shadow.withValues(alpha: 0.04),
+                                blurRadius: 12,
+                                offset: const Offset(-2, 0),
+                              ),
+                            ],
                           ),
                           child: Column(
                             children: [
-                              SizedBox(
-                                height: 10,
-                              ),
+                              const SizedBox(height: 18),
                               Padding(
                                 padding:
-                                    const EdgeInsets.symmetric(horizontal: 24),
+                                    const EdgeInsets.symmetric(horizontal: 28),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    Row(
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 28,
+                                          backgroundColor: colorScheme.primary
+                                              .withValues(alpha: 0.12),
+                                          child: Text(
+                                            selectedUser!.name.isNotEmpty
+                                                ? selectedUser!.name[0]
+                                                : '?',
+                                            style: TextStyle(
+                                              fontSize: 28,
+                                              color: colorScheme.primary,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 16),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                selectedUser!.name,
+                                                style: theme
+                                                    .textTheme.titleMedium
+                                                    ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 20,
+                                                  color: colorScheme.onSurface,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Last seen: ${_formatLastSeen(selectedUser!.lastSeen)}',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                  color: colorScheme.onSurface
+                                                      .withValues(alpha: 0.6),
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 24),
                                     const Text(
                                       'Media, Links & Docs',
                                       style: TextStyle(
@@ -393,24 +457,30 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                           ..sort((a, b) => b.timestamp
                                               .compareTo(a.timestamp));
                                         if (mediaMessages.isEmpty) {
-                                          return Text(
-                                            'No media yet.',
-                                            style: TextStyle(
-                                                color: Colors.grey[600],
-                                                fontSize: 14),
+                                          return Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 12),
+                                            child: Text(
+                                              'No media yet.',
+                                              style: theme.textTheme.bodySmall
+                                                  ?.copyWith(
+                                                      color: colorScheme
+                                                          .onSurface
+                                                          .withValues(
+                                                              alpha: 0.6),
+                                                      fontSize: 14),
+                                            ),
                                           );
                                         }
                                         return SizedBox(
-                                            height: 300,
+                                            height: 220,
                                             child: GridView.builder(
-                                              // shrinkWrap: true,
-                                              // physics: NeverScrollableScrollPhysics(),
                                               itemCount: mediaMessages.length,
                                               gridDelegate:
-                                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                                  const SliverGridDelegateWithFixedCrossAxisCount(
                                                 crossAxisCount: 3,
-                                                mainAxisSpacing: 6,
-                                                crossAxisSpacing: 6,
+                                                mainAxisSpacing: 8,
+                                                crossAxisSpacing: 8,
                                                 childAspectRatio: 1,
                                               ),
                                               itemBuilder: (context, idx) {
@@ -420,25 +490,27 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                                   return GestureDetector(
                                                     onTap: () {
                                                       // Open full screen image viewer
-                                                      // (implement as in your mobile UI)
                                                     },
                                                     child: ClipRRect(
                                                       borderRadius:
                                                           BorderRadius.circular(
-                                                              8),
+                                                              10),
                                                       child: Image.file(
                                                         File(msg.filePath!),
                                                         fit: BoxFit.cover,
                                                         errorBuilder:
                                                             (c, e, s) =>
                                                                 Container(
-                                                          color:
-                                                              Colors.grey[300],
+                                                          color: colorScheme
+                                                              .surface,
                                                           child: Icon(
                                                               Icons
                                                                   .broken_image,
-                                                              color:
-                                                                  Colors.grey),
+                                                              color: colorScheme
+                                                                  .onSurface
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.4)),
                                                         ),
                                                       ),
                                                     ),
@@ -452,11 +524,10 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                                     },
                                                     child: Stack(
                                                       children: [
-                                                        // Show video thumbnail (implement VideoThumbnailWidget if you have it)
                                                         ClipRRect(
                                                           borderRadius:
                                                               BorderRadius
-                                                                  .circular(8),
+                                                                  .circular(10),
                                                           child:
                                                               VideoThumbnailWidget(
                                                                   filePath: msg
@@ -466,23 +537,24 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                                           child: Icon(
                                                               Icons
                                                                   .play_circle_fill,
-                                                              color: Colors
-                                                                  .white70,
+                                                              color: colorScheme
+                                                                  .onSurface
+                                                                  .withValues(
+                                                                      alpha:
+                                                                          0.7),
                                                               size: 32),
                                                         ),
                                                       ],
                                                     ),
                                                   );
                                                 }
-                                                return SizedBox.shrink();
+                                                return const SizedBox.shrink();
                                               },
                                             ));
                                       },
                                     ),
-
                                     const SizedBox(height: 18),
-
-// Files List
+                                    // Files List
                                     Builder(
                                       builder: (context) {
                                         final fileMessages = selectedUser!
@@ -492,7 +564,7 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                           ..sort((a, b) => b.timestamp
                                               .compareTo(a.timestamp));
                                         if (fileMessages.isEmpty) {
-                                          return SizedBox.shrink();
+                                          return const SizedBox.shrink();
                                         }
                                         return Column(
                                           crossAxisAlignment:
@@ -506,7 +578,7 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                             ),
                                             const SizedBox(height: 8),
                                             SizedBox(
-                                              height: 180, // adjust as needed
+                                              height: 120,
                                               child: ListView.builder(
                                                 itemCount: fileMessages.length,
                                                 itemBuilder: (context, idx) {
@@ -514,8 +586,8 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                                                   return ListTile(
                                                     leading: Icon(
                                                         Icons.insert_drive_file,
-                                                        color: Colors
-                                                            .indigoAccent),
+                                                        color: colorScheme
+                                                            .primary),
                                                     title: Text(
                                                       msg.fileName ?? 'File',
                                                       maxLines: 1,
@@ -554,7 +626,16 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
   }
 }
 
-class _SidebarItem extends StatefulWidget {
+String _formatLastSeen(DateTime lastSeen) {
+  final now = DateTime.now();
+  final diff = now.difference(lastSeen);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+  if (diff.inHours < 24) return '${diff.inHours} hr ago';
+  return '${lastSeen.year}/${lastSeen.month}/${lastSeen.day}';
+}
+
+class _SidebarItemModern extends StatefulWidget {
   final Map<String, dynamic> item;
   final bool selected;
   final bool isDiscovered;
@@ -567,7 +648,7 @@ class _SidebarItem extends StatefulWidget {
   final void Function()? onTap;
   final void Function()? onDelete;
 
-  const _SidebarItem({
+  const _SidebarItemModern({
     required this.item,
     required this.selected,
     required this.isDiscovered,
@@ -582,10 +663,10 @@ class _SidebarItem extends StatefulWidget {
   });
 
   @override
-  State<_SidebarItem> createState() => _SidebarItemState();
+  State<_SidebarItemModern> createState() => _SidebarItemModernState();
 }
 
-class _SidebarItemState extends State<_SidebarItem> {
+class _SidebarItemModernState extends State<_SidebarItemModern> {
   bool isHovered = false;
 
   @override
@@ -593,125 +674,322 @@ class _SidebarItemState extends State<_SidebarItem> {
     final item = widget.item;
     final box = widget.box;
     final msgType = widget.msgType;
+    final isDiscovered = widget.isDiscovered;
+    final isOnline = widget.isOnline;
+    final isConnected = widget.isConnected;
+    final unreadCount = widget.unreadCount;
+
+    Color avatarColor;
+    if (isConnected) {
+      avatarColor = Colors.greenAccent.shade400;
+    } else if (isOnline) {
+      avatarColor = Colors.blueAccent.shade200;
+    } else if (isDiscovered) {
+      avatarColor = Colors.orangeAccent.shade200;
+    } else {
+      avatarColor = Colors.grey.shade400;
+    }
+
     return MouseRegion(
-      onEnter: (_) => setState(() => isHovered = true),
+      onHover: (_) => setState(() => isHovered = true),
       onExit: (_) => setState(() => isHovered = false),
-      child: Material(
-        color: widget.selected
-            ? Colors.white.withValues(alpha: .12)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: widget.onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: widget.isConnected
-                      ? Colors.green
-                      : widget.isOnline
-                          ? Colors.blueAccent
-                          : Colors.grey,
-                  radius: 20,
-                  child: Text(
-                    item['name']!.isNotEmpty ? item['name']![0] : '?',
-                    style: const TextStyle(color: Colors.white, fontSize: 20),
+      // hitTestBehavior: HitTestBehavior.translucent,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: widget.selected
+              ? Colors.white.withValues(alpha: 0.13)
+              : isHovered
+                  ? Colors.white.withValues(alpha: 0.07)
+                  : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: widget.selected
+              ? [
+                  BoxShadow(
+                    color: Colors.blueAccent.withValues(alpha: 0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ]
+              : [],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: widget.onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+              child: Row(
+                children: [
+                  Stack(
                     children: [
-                      Text(
-                        item['name']!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
+                      CircleAvatar(
+                        backgroundColor: avatarColor,
+                        radius: 22,
+                        child: Text(
+                          item['name']!.isNotEmpty ? item['name']![0] : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 2),
-                      if (msgType == 'image')
-                        const Icon(Icons.image, color: Colors.grey, size: 16)
-                      else if (msgType == 'audio')
-                        const Icon(Icons.music_note,
-                            color: Colors.grey, size: 16)
-                      else if (msgType == 'video')
-                        const Icon(Icons.video_camera_back,
-                            color: Colors.grey, size: 16)
-                      else if (msgType == 'file')
-                        const Icon(Icons.file_present,
-                            color: Colors.grey, size: 16)
-                      else if (msgType == 'call')
-                        const Icon(Icons.call, color: Colors.grey, size: 16)
-                      else if (msgType == 'text')
-                        Text(
-                          box.get(item['id'] as String)!.messages.last.text,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
+                      if (isConnected)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 13,
+                            height: 13,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.greenAccent.shade400,
+                                width: 2,
+                              ),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.check,
+                                  size: 9, color: Colors.green),
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
-                ),
-                if (widget.unreadCount > 0)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${widget.unreadCount}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['name']!,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: widget.selected
+                                ? FontWeight.bold
+                                : FontWeight.w600,
+                            fontSize: 17,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        if (msgType == 'image')
+                          Row(
+                            children: const [
+                              Icon(Icons.image,
+                                  color: Colors.white70, size: 16),
+                              SizedBox(width: 4),
+                              Text('Photo',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                            ],
+                          )
+                        else if (msgType == 'audio')
+                          Row(
+                            children: const [
+                              Icon(Icons.music_note,
+                                  color: Colors.white70, size: 16),
+                              SizedBox(width: 4),
+                              Text('Audio',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                            ],
+                          )
+                        else if (msgType == 'video')
+                          Row(
+                            children: const [
+                              Icon(Icons.videocam_rounded,
+                                  color: Colors.white70, size: 16),
+                              SizedBox(width: 4),
+                              Text('Video',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                            ],
+                          )
+                        else if (msgType == 'file')
+                          Row(
+                            children: const [
+                              Icon(Icons.file_present,
+                                  color: Colors.white70, size: 16),
+                              SizedBox(width: 4),
+                              Text('File',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                            ],
+                          )
+                        else if (msgType == 'call')
+                          Row(
+                            children: const [
+                              Icon(Icons.call, color: Colors.white70, size: 16),
+                              SizedBox(width: 4),
+                              Text('Call',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 13)),
+                            ],
+                          )
+                        else if (msgType == 'text')
+                          Text(
+                            box.get(item['id'] as String)!.messages.last.text,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
                     ),
                   ),
-                // Hover icon button
-                AnimatedOpacity(
-                  opacity: isHovered ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 150),
-                  child: isHovered
-                      ? PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert,
-                              color: Colors.white70),
-                          onSelected: (value) async {
-                            if (value == 'delete') {
-                              if (widget.onDelete != null) widget.onDelete!();
-                            }
-                          },
-                          itemBuilder: (context) => [
-                            const PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.delete,
-                                      color: Colors.redAccent, size: 20),
-                                  SizedBox(width: 8),
-                                  Text('Delete Chat'),
-                                ],
-                              ),
+                  if (unreadCount > 0)
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.redAccent.withValues(alpha: 0.18),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        '$unreadCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  // Hover icon button
+                  AnimatedOpacity(
+                      opacity: isHovered ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: PopupMenuButton<String>(
+                        icon:
+                            const Icon(Icons.more_vert, color: Colors.white70),
+                        onSelected: (value) async {
+                          if (value == 'delete') {
+                            if (widget.onDelete != null) widget.onDelete!();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem<String>(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete,
+                                    color: Colors.redAccent, size: 20),
+                                SizedBox(width: 8),
+                                Text('Delete Chat'),
+                              ],
                             ),
-                          ],
-                        )
-                      : const SizedBox(width: 40),
-                ),
-              ],
+                          ),
+                        ],
+                      )),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
+
+class _NoChatSelectedModern extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 64.0),
+        child: Container(
+          padding: const EdgeInsets.all(40),
+          decoration: BoxDecoration(
+            color: isDark
+                ? colorScheme.surface.withValues(alpha: 0.92)
+                : colorScheme.surface.withValues(alpha: 0.95),
+            border: Border.all(
+                color: colorScheme.onSurface.withValues(alpha: 0.08),
+                width: 1.5),
+            borderRadius: BorderRadius.circular(32),
+            boxShadow: [
+              BoxShadow(
+                color: isDark
+                    ? Colors.black.withValues(alpha: 0.18)
+                    : colorScheme.primary.withValues(alpha: 0.08),
+                blurRadius: isDark ? 32 : 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.forum_rounded,
+                size: 90,
+                color: colorScheme.secondary,
+              ),
+              const SizedBox(height: 32),
+              Text(
+                'Welcome to AirChat Desktop',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? colorScheme.onSurface : colorScheme.primary,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Select a conversation from the sidebar or start a new chat to begin messaging.\n\nYou can also discover nearby devices to chat with!',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  fontSize: 16,
+                  color: isDark
+                      ? colorScheme.onSurface.withValues(alpha: 0.85)
+                      : colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: colorScheme.secondary,
+                size: 36,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Pick a user on the left',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontSize: 15,
+                  color: colorScheme.secondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoGlowScrollBehavior extends ScrollBehavior {
+  // @override
+  Widget buildViewportChrome(
+      BuildContext context, Widget child, AxisDirection axisDirection) {
+    return child;
   }
 }
