@@ -103,7 +103,7 @@ class _VideoViewerState extends State<VideoViewer> {
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: .4),
         elevation: 0,
-        title: const Text('Video Viewer'),
+        title: const Text('Video Viewer',style: TextStyle(color: Colors.white),),
       ),
       body: Focus(
         autofocus: true,
@@ -213,7 +213,7 @@ class _VideoThumbnailWidgetState extends State<VideoThumbnailWidget> {
     _controller = VideoController(_player);
 
     // Open the video file
-    _player.open(Media(widget.filePath)).then((_) {
+    _player.open(Media(widget.filePath), play: false).then((_) {
       if (mounted) {
         setState(() {
           _initialized = true;

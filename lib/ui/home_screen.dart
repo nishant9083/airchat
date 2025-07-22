@@ -29,7 +29,6 @@ class _HomeScreenState extends State<HomeScreen>
   String? _error;
   late TabController _tabController;
   Box<ChatUser> get _userBox => Hive.box<ChatUser>('chat_users');
-  bool _isAppActive = true;
 
   final TextEditingController _searchController = TextEditingController();
   bool _isChatTab = true;
@@ -92,9 +91,11 @@ class _HomeScreenState extends State<HomeScreen>
         box.put(userId, user);
       }
       if (event['type'] == 'call') {
-        if(event['message'] == '__CALL_INVITE__' && !_isAppActive)
-        {
-          NotificationUtil.showIncomingCall(id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF, callerName: event['name']);
+        if (event['message'] == '__CALL_INVITE__' &&
+            connProvider.appState != AppLifecycleState.resumed) {
+          NotificationUtil.showIncomingCall(
+              id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+              callerName: event['name']);
         }
         return;
       }
@@ -112,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen>
       user.messages.add(msg);
       user.lastSeen = DateTime.now();
       user.save();
-      if(!_isAppActive){
+      if (connProvider.appState != AppLifecycleState.resumed) {
         NotificationUtil.showNotification(
           id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
           title: event['name'] ?? 'New Message',
@@ -150,6 +151,13 @@ class _HomeScreenState extends State<HomeScreen>
       }
       user.messages.add(msg);
       user.save();
+      if (connProvider.appState != AppLifecycleState.resumed) {
+        NotificationUtil.showNotification(
+          id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+          title: event['name'] ?? 'New Message',
+          body: event['fileName'] ?? '',
+        );
+      }
     });
   }
 
@@ -158,20 +166,26 @@ class _HomeScreenState extends State<HomeScreen>
     super.didChangeAppLifecycleState(state);
     final connProvider =
         Provider.of<ConnectionStateProvider>(context, listen: false);
+    print(state);
     switch (state) {
       case AppLifecycleState.resumed:
-        setState(() {
-          _isAppActive = true;
-        });
-        _refreshConnectionState(connProvider);
+      NotificationUtil.cancelAll();
+        if (connProvider.appState == AppLifecycleState.hidden) {
+          _refreshConnectionState(connProvider);
+        }
+        connProvider.setAppState(AppLifecycleState.resumed);
+        break;
+      case AppLifecycleState.inactive:
+        connProvider.setAppState(AppLifecycleState.inactive);
+        break;
+      case AppLifecycleState.detached:
+        // connProvider.setAppState(AppLifecycleState.detached);
+        break;
+      case AppLifecycleState.hidden:
+        connProvider.setAppState(AppLifecycleState.hidden);
         break;
       case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
-      case AppLifecycleState.hidden:
-        setState(() {
-          _isAppActive = false;
-        });
+        connProvider.setAppState(AppLifecycleState.paused);
         break;
     }
   }
@@ -187,9 +201,7 @@ class _HomeScreenState extends State<HomeScreen>
         connProvider.setDiscovered(user['id'], user['name']);
       }
     } catch (e) {
-      
-        log('Error refreshing connection state: $e');
-      
+      log('Error refreshing connection state: $e');
     }
   }
 
@@ -237,7 +249,6 @@ class _HomeScreenState extends State<HomeScreen>
         error: _error,
         tabController: _tabController,
         userBox: _userBox,
-        isAppActive: _isAppActive,
         searchController: _searchController,
         isChatTab: _isChatTab,
         startDiscovery: _startDiscovery,
@@ -248,7 +259,6 @@ class _HomeScreenState extends State<HomeScreen>
         error: _error,
         tabController: _tabController,
         userBox: _userBox,
-        isAppActive: _isAppActive,
         searchController: _searchController,
         isChatTab: _isChatTab,
         startDiscovery: _startDiscovery,

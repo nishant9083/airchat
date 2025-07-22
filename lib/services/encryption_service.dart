@@ -60,21 +60,22 @@ class EncryptionService {
   }
 
   /// Encrypt a message (text or file bytes)
-  Future<Map<String, dynamic>> encrypt(Uint8List plainBytes) async {
+  Future<Map<String, dynamic>> encrypt(Uint8List plainBytes,
+      {bool inNewThread = false}) async {
     if (_sharedAesKey == null) throw Exception('AES key not derived');
 
     final aes = AesGcm.with256bits();
 
-    // Future<SecretBox> encryptInIsolate() async {
-    //   return await aes.encrypt(
-    //     plainBytes,
-    //     secretKey: _sharedAesKey!,
-    //   );
-    // }
-
-    final encrypted = await  aes.encrypt(
+    Future<SecretBox> encryptInIsolate() async {
+      return await aes.encrypt(
         plainBytes,
-        secretKey: _sharedAesKey!);
+        secretKey: _sharedAesKey!,
+      );
+    }
+
+    final encrypted = inNewThread
+        ? await Isolate.run(() => encryptInIsolate())
+        : await aes.encrypt(plainBytes, secretKey: _sharedAesKey!);
 
     return {
       'nonce': base64Encode(encrypted.nonce),
@@ -85,65 +86,44 @@ class EncryptionService {
 
   /// Encrypt a stream message (text or file bytes) and return a stream of encrypted bytes.
   /// The returned stream emits the encrypted bytes as they become available.
-  /// The nonce and mac are returned alongside the stream for decryption.
+  /// The nonce is returned immediately, and the MAC is provided via the [onMac] callback when available.
   ///
   /// Usage:
-  ///   final result = await encryptStream(plainBytes);
-  ///   result['stream'] is the Stream`<List<int>>`of encrypted bytes.
-  ///   result['nonce'] and result['mac'] are base64 strings.
-  Future<Map<String, dynamic>> encryptStream(
-      Stream<List<int>> plainBytes) async {
+  ///   final stream = encryptStream(
+  ///     plainBytes,
+  ///     onMac: (mac, nonce) {
+  ///       // Use mac and nonce when available
+  ///     },
+  ///   );
+  ///   // stream is Stream`<List<int>>`
+  Stream<List<int>> encryptStream(
+    Stream<List<int>> plainBytes, {
+    required void Function(String mac, String nonce) onMac,
+  }) {
     if (_sharedAesKey == null) throw Exception('AES key not derived');
 
     final aes = AesGcm.with256bits();
     final nonce = aes.newNonce();
 
-    // Prepare a controller to output the encrypted bytes
-    final controller = StreamController<List<int>>();
-    Mac? mac;
-
-    // Start encryption
     final secretBoxStream = aes.encryptStream(
       plainBytes,
       secretKey: _sharedAesKey!,
       nonce: nonce,
       onMac: (Mac m) {
-        mac = m;
+        onMac(base64Encode(m.bytes), base64Encode(nonce));
       },
     );
 
-    // Listen to the SecretBox stream and add cipherText chunks to the output stream
-    secretBoxStream.listen(
-      (secretBox) {
-        controller.add(secretBox);
-      },
-      onError: controller.addError,
-      onDone: () async {
-        await controller.close();
-      },
-      cancelOnError: true,
-    );
-
-    // Wait for the first chunk to ensure the stream is valid
-    await controller.done;
-
-    if (mac == null) {
-      throw Exception('Encryption failed: MAC not generated');
-    }
-
-    return {
-      'nonce': base64Encode(nonce),
-      'mac': base64Encode(mac!.bytes),
-      'stream': controller.stream,
-    };
+    // The stream emits List<int> (cipherText chunks)
+    return secretBoxStream;
   }
 
   /// Decrypt a received message
-  Future<List<int>> decrypt({
-    required String nonce,
-    required List<int> cipherText,
-    required String mac,
-  }) async {
+  Future<List<int>> decrypt(
+      {required String nonce,
+      required List<int> cipherText,
+      required String mac,
+      bool isNewThread = false}) async {
     if (_sharedAesKey == null) throw Exception('AES key not derived');
 
     final aes = AesGcm.with256bits();
@@ -153,11 +133,34 @@ class EncryptionService {
       mac: Mac(base64Decode(mac)),
     );
 
-    // Future<List<int>> decryptInIsolate() async {
-    //   return await aes.decrypt(box, secretKey: _sharedAesKey!);
-    // }
+    Future<List<int>> decryptInIsolate() async {
+      return await aes.decrypt(box, secretKey: _sharedAesKey!);
+    }
 
-    return await aes.decrypt(box, secretKey: _sharedAesKey!);
+    return isNewThread
+        ? await Isolate.run(() => decryptInIsolate())
+        : await aes.decrypt(box, secretKey: _sharedAesKey!);
+  }
+
+  /// Decrypts a stream of encrypted data chunks (cipherText) using the current shared AES key.
+  ///
+  /// [cipherTextStream] is a stream of encrypted bytes (cipherText).
+  /// [nonce] and [mac] are required for decryption and should be provided as base64 strings.
+  /// Returns a stream of decrypted bytes.
+  Stream<List<int>> decryptStream({
+    required Stream<List<int>> cipherTextStream,
+    required String nonce,
+    required String mac,
+  }) {
+    if (_sharedAesKey == null) throw Exception('AES key not derived');
+
+    final aes = AesGcm.with256bits();
+    return aes.decryptStream(
+      cipherTextStream,
+      secretKey: _sharedAesKey!,
+      nonce: base64Decode(nonce),
+      mac: Mac(base64Decode(mac)),
+    );
   }
 
   /// Reset state (for testing or re-handshake)

@@ -76,7 +76,7 @@ class _FullScreenImageViewerState extends State<FullScreenImageViewer> {
       appBar: AppBar(
         backgroundColor: Colors.black.withValues(alpha: 0.4),
         elevation: 0,
-        title: const Text('Image Viewer'),
+        title: const Text('Image Viewer', style: TextStyle(color: Colors.white),),
       ),
       backgroundColor: Colors.black,
       body: PageView.builder(

@@ -6,9 +6,15 @@ class ConnectionStateProvider extends ChangeNotifier {
   final Map<String, String> discovered = {}; // userId -> name
   String? inChatUserId;
   bool discovering = false;
+  AppLifecycleState appState = AppLifecycleState.resumed;
 
   // Use LAN backend's connected peers
   List<LanPeer> get connectedPeers => LanConnectionService().connectedPeers;
+
+  void setAppState(AppLifecycleState state){
+    appState = state;
+    notifyListeners();
+  }
 
   void setInChatUserId(String? userId) {
     inChatUserId = userId;

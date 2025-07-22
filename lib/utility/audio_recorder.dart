@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:airchat/services/lan_connection_service.dart';
+import 'package:airchat/utility/storage_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -66,23 +66,22 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
     if (!widget.isConnected) return;
 
     try {
-      await _audioRecorder.hasPermission();      
+      await _audioRecorder.hasPermission();
       await _requestPermissions();
 
       final path = await getReceivedFilesDir();
       final directory = Directory(p.join(path, 'sent'));
       if (!await directory.exists()) await directory.create(recursive: true);
-      final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final fileName = 'audio_${DateTime.now().millisecondsSinceEpoch}.wav';
       _recordingPath = p.join(directory.path, fileName);
 
       await _audioRecorder.start(
         RecordConfig(
-          encoder: AudioEncoder.aacLc,
-          bitRate: 128000,
-          sampleRate: 44100,
-          noiseSuppress: true,
-          echoCancel: true
-        ),
+            encoder: AudioEncoder.wav,
+            bitRate: 128000,
+            sampleRate: 44100,
+            noiseSuppress: true,
+            echoCancel: true),
         path: _recordingPath!,
       );
 
@@ -266,8 +265,10 @@ class _AudioRecorderWidgetState extends State<AudioRecorderWidget>
                         size: 32,
                       ),
                       onPressed: () async {
-                        Navigator.of(context).pop();
                         await _stopRecording();
+                        if (context.mounted) {
+                          Navigator.of(context).pop();
+                        }
                       },
                     ),
                     const SizedBox(width: 24),

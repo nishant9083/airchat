@@ -15,8 +15,7 @@ import 'chat_screen.dart';
 class HomeScreenMobile extends StatefulWidget {
   final String? error;
   final dynamic tabController;
-  final Box<ChatUser> userBox;
-  final bool isAppActive;
+  final Box<ChatUser> userBox;  
   final dynamic searchController;
   final bool isChatTab;
   final dynamic startDiscovery;
@@ -26,8 +25,7 @@ class HomeScreenMobile extends StatefulWidget {
     super.key,
     required this.error,
     required this.tabController,
-    required this.userBox,
-    required this.isAppActive,
+    required this.userBox,    
     required this.searchController,
     required this.isChatTab,
     required this.startDiscovery,

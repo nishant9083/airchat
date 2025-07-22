@@ -118,7 +118,7 @@ class ConnectionService {
   static Stream<Map<String, dynamic>> get fileEventsStream =>
       _lan.fileEventStream;
 
-  static Stream<Map<String, dynamic>?> get fileTransferProgressStream =>
+  static Stream<Map<String, dynamic>> get fileTransferProgressStream =>
       _lan.fileTransferProgressStream;
 
   // Discovery/Advertising (LAN: only discovery is needed)

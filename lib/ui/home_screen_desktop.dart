@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../models/chat_user.dart';
-import '../models/chat_message.dart';
 import '../providers/connection_state_provider.dart';
 import 'package:airchat/providers/call_state_provider.dart';
 
@@ -18,8 +17,7 @@ class HomeScreenDesktop extends StatefulWidget {
     super.key,
     required this.error,
     required this.tabController,
-    required this.userBox,
-    required this.isAppActive,
+    required this.userBox,    
     required this.searchController,
     required this.isChatTab,
     required this.startDiscovery,
@@ -28,8 +26,7 @@ class HomeScreenDesktop extends StatefulWidget {
 
   final String? error;
   final dynamic tabController;
-  final Box<ChatUser> userBox;
-  final bool isAppActive;
+  final Box<ChatUser> userBox;  
   final dynamic searchController;
   final bool isChatTab;
   final dynamic startDiscovery;
@@ -94,7 +91,7 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                       }),
                 ];
 
-                final List<ChatMessage> messages = selectedUser?.messages ?? [];
+                // final List<ChatMessage> messages = selectedUser?.messages ?? [];
 
                 // Modern, glassy, and more visually appealing UI
                 return Scaffold(
@@ -342,8 +339,7 @@ class _HomeScreenDesktopState extends State<HomeScreenDesktop> {
                               ? _NoChatSelectedModern()
                               : DesktopChatSection(
                                   key: ValueKey(selectedUserId),
-                                  user: selectedUser!,
-                                  messages: messages,
+                                  user: selectedUser!,                                  
                                   onBack: () {
                                     setState(() {
                                       selectedUserId = null;

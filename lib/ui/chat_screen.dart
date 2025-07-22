@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:developer';
 import 'dart:io';
 import 'package:airchat/services/overlay_service.dart';
 import 'package:airchat/ui/calling_screen.dart';
-import 'package:airchat/utility/audio_player.dart';
 import 'package:airchat/utility/image_viewer.dart';
 import 'package:airchat/utility/audio_recorder.dart';
 import 'package:flutter/foundation.dart';
@@ -35,7 +35,6 @@ class _ChatScreenState extends State<ChatScreen> {
   late Box<ChatUser> _userBox;
   final ScrollController _scrollController = ScrollController();
   StreamSubscription? _fileTransferProgressSubscription;
-  // final Set<int> _selectedMessages = {};
   final Map<int, ChatMessage> _selectedMessages = {};
   bool get _isSelectionMode => _selectedMessages.isNotEmpty;
 
@@ -53,7 +52,6 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       user.save();
     }
-
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
@@ -62,23 +60,18 @@ class _ChatScreenState extends State<ChatScreen> {
     super.didChangeDependencies();
 
     ConnectionService.fileTransferProgressStream.listen((event) {
-      if (event == null) return;
       final payloadId = event['id'];
       final progress = event['progress'];
-      if (progress != null && progress >= 0 && progress <= 1) {
-        // Find the message being sent/received (by filePath or other means)
-        final user = _userBox.get(widget.user.id);
-        if (user != null) {
-          try {
-            final msg = user.messages.firstWhere((m) => m.id == payloadId);
-            msg.transferProgress = progress;
-            msg.status = event['status'];
-            user.save();
-          } catch (e) {
-            if (kDebugMode) {
-              print('Error finding message for payload $payloadId: $e');
-            }
-          }
+      // Find the message being sent/received (by filePath or other means)
+      final user = _userBox.get(widget.user.id);
+      if (user != null) {
+        try {
+          final msg = user.messages.firstWhere((m) => m.id == payloadId);
+          msg.transferProgress = progress;
+          msg.status = event['status'];
+          user.save();
+        } catch (e) {
+          log('Error finding message for payload $payloadId: $e');
         }
       }
     });
@@ -202,7 +195,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 return;
               }
               if (context.mounted) {
-                Navigator.of(context).pop();                
+                Navigator.of(context).pop();
               }
             },
             child: Scaffold(
@@ -255,17 +248,28 @@ class _ChatScreenState extends State<ChatScreen> {
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.of(context).pop(),
-                                        child: const Text('Cancel'),
+                                        child: Text(
+                                          'Cancel',
+                                          style: TextStyle(
+                                              color: colorScheme.onTertiary),
+                                        ),
                                       ),
                                       TextButton(
                                         onPressed: () async {
                                           Navigator.of(context).pop();
-                                          await _deleteMessages(
+                                          await deleteMessages(
                                               deleteMedia: false,
                                               messagesToDelete:
-                                                  messagesToDelete);
+                                                  messagesToDelete,
+                                              user: widget.user);
+                                          setState(() {
+                                            _selectedMessages.clear();
+                                          });
                                         },
-                                        child: const Text('Delete'),
+                                        child: const Text(
+                                          'Delete',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -287,37 +291,52 @@ class _ChatScreenState extends State<ChatScreen> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             CheckboxListTile(
-                                              value: deleteMediaFromStorage,
-                                              onChanged: (val) {
-                                                setState(() {
-                                                  deleteMediaFromStorage =
-                                                      val ?? false;
-                                                });
-                                              },
-                                              title: const Text(
-                                                  'Delete media from device'),
-                                              controlAffinity:
-                                                  ListTileControlAffinity
-                                                      .leading,
-                                            ),
+                                                value: deleteMediaFromStorage,
+                                                onChanged: (val) {
+                                                  setState(() {
+                                                    deleteMediaFromStorage =
+                                                        val ?? false;
+                                                  });
+                                                },
+                                                title: const Text(
+                                                    'Delete media from device'),
+                                                controlAffinity:
+                                                    ListTileControlAffinity
+                                                        .leading,
+                                                side: BorderSide(
+                                                    color: colorScheme
+                                                        .onTertiary)),
                                           ],
                                         ),
                                         actions: [
                                           TextButton(
                                             onPressed: () =>
                                                 Navigator.of(context).pop(),
-                                            child: const Text('Cancel'),
+                                            child: Text(
+                                              'Cancel',
+                                              style: TextStyle(
+                                                  color:
+                                                      colorScheme.onTertiary),
+                                            ),
                                           ),
                                           TextButton(
                                             onPressed: () async {
                                               Navigator.of(context).pop();
-                                              await _deleteMessages(
+                                              await deleteMessages(
                                                   deleteMedia:
                                                       deleteMediaFromStorage,
                                                   messagesToDelete:
-                                                      messagesToDelete);
+                                                      messagesToDelete,
+                                                  user: widget.user);
+                                              setState(() {
+                                                _selectedMessages.clear();
+                                              });
                                             },
-                                            child: const Text('Delete'),
+                                            child: const Text(
+                                              'Delete',
+                                              style:
+                                                  TextStyle(color: Colors.red),
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -398,6 +417,89 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           },
                         ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert),
+                          tooltip: 'More options',
+                          onSelected: (value) {
+                            if (value == 'mute') {
+                              showSnackbar(
+                                  'Mute notifications not implemented');
+                            } else if (value == 'clear') {
+                              bool deleteMediaFromStorage = false;
+
+                              showDialog(
+                                context: context,
+                                builder: (context) {
+                                  return StatefulBuilder(
+                                    builder: (context, setState) => AlertDialog(
+                                      title: Text(
+                                        'Delete${widget.user.messages.length > 1 ? ' ${widget.user.messages.length}' : ''} message${widget.user.messages.length > 1 ? 's' : ''}?',
+                                        style: TextStyle(fontSize: 18),
+                                      ),
+                                      content: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          CheckboxListTile(
+                                              value: deleteMediaFromStorage,
+                                              onChanged: (val) {
+                                                setState(() {
+                                                  deleteMediaFromStorage =
+                                                      val ?? false;
+                                                });
+                                              },
+                                              title: const Text(
+                                                  'Delete media from device'),
+                                              controlAffinity:
+                                                  ListTileControlAffinity
+                                                      .leading,
+                                              side: BorderSide(
+                                                  color:
+                                                      colorScheme.onTertiary)),
+                                        ],
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(),
+                                          child: Text(
+                                            'Cancel',
+                                            style: TextStyle(
+                                                color: colorScheme.onTertiary),
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            Navigator.of(context).pop();
+                                            await deleteMessages(
+                                                deleteMedia:
+                                                    deleteMediaFromStorage,
+                                                messagesToDelete:
+                                                    widget.user.messages,
+                                                user: widget.user);
+                                          },
+                                          child: const Text(
+                                            'Delete',
+                                            style: TextStyle(color: Colors.red),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'mute',
+                              child: Text('Mute notifications'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'clear',
+                              child: Text('Clear Chat'),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
               body: Column(
@@ -414,6 +516,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         //     .addPostFrameCallback((_) => _scrollToBottom());
                         return ListView.builder(
                           controller: _scrollController,
+                          cacheExtent: 500,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           itemCount: user.messages.length,
                           itemBuilder: (context, index) {
@@ -488,7 +591,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: Container(
                                     color: _selectedMessages.containsKey(index)
                                         ? Colors.blue.withValues(alpha: .2)
-                                        : null,
+                                        : Colors.transparent,
                                     padding:
                                         EdgeInsets.symmetric(horizontal: 16),
                                     margin:
@@ -575,68 +678,139 @@ class _ChatScreenState extends State<ChatScreen> {
                                         ? () async {
                                             showModalBottomSheet(
                                               context: context,
+                                              backgroundColor:
+                                                  Colors.transparent,
+                                              isScrollControlled: true,
+                                              shape:
+                                                  const RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.vertical(
+                                                  top: Radius.circular(28),
+                                                ),
+                                              ),
                                               builder: (context) => SafeArea(
-                                                child: Wrap(
-                                                  children: [
-                                                    ListTile(
-                                                      leading: const Icon(
-                                                          Icons.image),
-                                                      title: const Text(
-                                                          'Send Image'),
-                                                      onTap: () {
-                                                        Navigator.pop(context);
-                                                        pickImage(
-                                                            _userBox,
-                                                            widget.user.id,
-                                                            _scrollToBottom,
-                                                            showSnackbar);
-                                                      },
+                                                child: Container(
+                                                  decoration: BoxDecoration(
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .surface,
+                                                    borderRadius:
+                                                        const BorderRadius
+                                                            .vertical(
+                                                      top: Radius.circular(28),
                                                     ),
-                                                    ListTile(
-                                                      leading: const Icon(Icons
-                                                          .video_collection),
-                                                      title: const Text(
-                                                          'Send Video'),
-                                                      onTap: () {
-                                                        Navigator.pop(context);
-                                                        pickVideo(
-                                                            _userBox,
-                                                            widget.user.id,
-                                                            _scrollToBottom,
-                                                            showSnackbar);
-                                                      },
-                                                    ),
-                                                    ListTile(
-                                                      leading: const Icon(
-                                                          Icons.audio_file),
-                                                      title: const Text(
-                                                          'Send Audio'),
-                                                      onTap: () {
-                                                        Navigator.pop(context);
-                                                        pickFile(
-                                                            'audio',
-                                                            _userBox,
-                                                            widget.user.id,
-                                                            _scrollToBottom,
-                                                            showSnackbar);
-                                                      },
-                                                    ),
-                                                    ListTile(
-                                                      leading: const Icon(Icons
-                                                          .insert_drive_file),
-                                                      title: const Text(
-                                                          'Send File'),
-                                                      onTap: () {
-                                                        Navigator.pop(context);
-                                                        pickFile(
-                                                            'file',
-                                                            _userBox,
-                                                            widget.user.id,
-                                                            _scrollToBottom,
-                                                            showSnackbar);
-                                                      },
-                                                    ),
-                                                  ],
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: Colors.black
+                                                            .withValues(
+                                                                alpha: 0.08),
+                                                        blurRadius: 16,
+                                                        offset:
+                                                            const Offset(0, -4),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      vertical: 24,
+                                                      horizontal: 8),
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Container(
+                                                        width: 40,
+                                                        height: 4,
+                                                        margin: const EdgeInsets
+                                                            .only(bottom: 16),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color:
+                                                              Colors.grey[300],
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(2),
+                                                        ),
+                                                      ),
+                                                      Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .spaceEvenly,
+                                                        children: [
+                                                          AttachmentAction(
+                                                            icon: Icons.image,
+                                                            color:
+                                                                Colors.purple,
+                                                            label: 'Image',
+                                                            onTap: () {
+                                                              Navigator.pop(
+                                                                  context);
+                                                              pickImage(
+                                                                _userBox,
+                                                                widget.user.id,
+                                                                _scrollToBottom,
+                                                                showSnackbar,
+                                                              );
+                                                            },
+                                                          ),
+                                                          AttachmentAction(
+                                                            icon: Icons
+                                                                .video_collection,
+                                                            color: Colors
+                                                                .redAccent,
+                                                            label: 'Video',
+                                                            onTap: () {
+                                                              Navigator.pop(
+                                                                  context);
+                                                              pickVideo(
+                                                                _userBox,
+                                                                widget.user.id,
+                                                                _scrollToBottom,
+                                                                showSnackbar,
+                                                              );
+                                                            },
+                                                          ),
+                                                          AttachmentAction(
+                                                            icon: Icons
+                                                                .audio_file,
+                                                            color: Colors.teal,
+                                                            label: 'Audio',
+                                                            onTap: () {
+                                                              Navigator.pop(
+                                                                  context);
+                                                              pickFile(
+                                                                'audio',
+                                                                _userBox,
+                                                                widget.user.id,
+                                                                _scrollToBottom,
+                                                                showSnackbar,
+                                                              );
+                                                            },
+                                                          ),
+                                                          AttachmentAction(
+                                                            icon: Icons
+                                                                .insert_drive_file,
+                                                            color:
+                                                                Colors.blueGrey,
+                                                            label: 'File',
+                                                            onTap: () {
+                                                              Navigator.pop(
+                                                                  context);
+                                                              pickFile(
+                                                                'file',
+                                                                _userBox,
+                                                                widget.user.id,
+                                                                _scrollToBottom,
+                                                                showSnackbar,
+                                                              );
+                                                            },
+                                                          ),
+                                                        ],
+                                                      ),
+                                                      const SizedBox(
+                                                          height: 16),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             );
@@ -695,401 +869,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ));
       },
-    );
-  }
-
-  // Helper to actually delete messages (and optionally media)
-  Future<void> _deleteMessages(
-      {required bool deleteMedia,
-      required List<ChatMessage> messagesToDelete}) async {
-    final user = _userBox.get(widget.user.id);
-    if (user != null) {
-      for (var msg in messagesToDelete) {
-        if (deleteMedia &&
-            (msg.type == 'image' ||
-                msg.type == 'file' ||
-                msg.type == 'audio' ||
-                msg.type == 'video')) {
-          // Try to delete the file from storage
-          if (msg.filePath != null && msg.filePath!.isNotEmpty) {
-            final file = File(msg.filePath!);
-            if (await file.exists()) {
-              try {
-                await file.delete();
-              } catch (e) {
-                if (kDebugMode) {
-                  print('Failed to delete file: $e');
-                }
-              }
-            }
-          }
-        }
-        user.messages.removeWhere((m) => m.id == msg.id);
-      }
-      await user.save();
-    }
-    setState(() {
-      _selectedMessages.clear();
-    });
-    showSnackbar('Message${messagesToDelete.length > 1 ? 's' : ''} deleted');
-  }
-}
-
-Widget getWidgetForMsg(ChatMessage msg, BuildContext context) {
-  if (msg.type == 'image') {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          // margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: msg.isMe ? Theme.of(context).primaryColor : Colors.grey[200],
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: (!msg.isMe && msg.status != 1.0)
-                ? SizedBox(
-                    height: 180,
-                    width: 180,
-                  )
-                : Image.file(
-                    File(msg.filePath!),
-                    width: 180,
-                    height: 180,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: SizedBox(
-                        width: 180,
-                        height: 180,
-                        child: Center(
-                          child: Text(
-                            'Image not found',
-                            style: TextStyle(
-                              color: msg.isMe ? Colors.white : Colors.black,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-          ),
-        ),
-        if (msg.transferProgress != null &&
-            msg.transferProgress! < 1.0 &&
-            msg.status == 3)
-          Positioned.fill(
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Center(
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: CircularProgressIndicator(
-                      value: msg.transferProgress,
-                      backgroundColor: Colors.white24,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  } else if (msg.type == 'audio') {
-    return Stack(
-      children: [
-        SizedBox(
-          width: MediaQuery.of(context).size.width * 0.7,
-          child: Padding(
-              padding: const EdgeInsets.all(0.0),
-              child: msg.filePath != null && msg.status == 1
-                  ? AudioPlayerWidget(filePath: msg.filePath!, isMe: msg.isMe)
-                  : Container(
-                      height: 40,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 4),
-                      decoration: BoxDecoration(
-                          color: msg.isMe
-                              ? Theme.of(context).primaryColor
-                              : Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12)),
-                      child: Row(
-                        children: [
-                          Icon(Icons.audiotrack,
-                              color: msg.isMe ? Colors.white : Colors.black54),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              msg.fileName ?? 'Audio',
-                              style: TextStyle(
-                                color: msg.isMe ? Colors.white : Colors.black87,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
-        ),
-        if (msg.transferProgress != null &&
-            msg.transferProgress! < 1.0 &&
-            msg.status == 3)
-          Positioned.fill(
-            child: Padding(
-                padding: const EdgeInsets.only(top: 0.0),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      value: msg.transferProgress,
-                      backgroundColor: Colors.white24,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                    ),
-                  ),
-                )),
-          )
-      ],
-    );
-  } else if (msg.type == 'video') {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 180,
-          height: 180,
-          // margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: msg.isMe ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.secondary,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: (!msg.isMe && msg.status != 1.0)
-                ? SizedBox(
-                    height: 180,
-                    width: 180,
-                  )
-                : Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Video thumbnail
-                      VideoThumbnailWidget(filePath: msg.filePath!),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black45,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.play_arrow,
-                            color: Colors.white, size: 48),
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-        if (msg.transferProgress != null &&
-            msg.transferProgress! < 1.0 &&
-            msg.status == 3)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black26,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(
-                    value: msg.transferProgress,
-                    backgroundColor: Colors.white24,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  } else if (msg.type == 'file') {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          // padding: const EdgeInsets.all(2),
-          // margin: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            color: msg.isMe ? Theme.of(context).primaryColor : Theme.of(context).colorScheme.secondary,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: SizedBox(
-            width: MediaQuery.of(context).size.width * 0.7,
-            child: ListTile(
-                leading: getFileIcon(msg.fileName),
-                title: Text(
-                  msg.fileName ?? 'File',
-                  style: TextStyle(
-                      color: msg.isMe ? Colors.white : Colors.black87),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-                subtitle: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        getFileType(msg.fileName),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: msg.isMe ? Colors.white70 : Colors.black54,
-                        ),
-                      ),
-                      msg.filePath != null
-                          ? Text(
-                              ' \u2022 ${formatFileSize(msg.filePath)}',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color:
-                                    msg.isMe ? Colors.white70 : Colors.black54,
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ])),
-          ),
-        ),
-        if (msg.transferProgress != null &&
-            msg.transferProgress! < 1.0 &&
-            msg.status == 3)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.black26,
-              ),
-              child: Center(
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: CircularProgressIndicator(
-                    value: msg.transferProgress,
-                    backgroundColor: Colors.white30,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  } else if (msg.type == 'call') {
-    return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        // width: MediaQuery.of(context).size.width * 0.5,
-        margin: EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        // clipBehavior: Clip.hardEdge,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          // color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-        ),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.5,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              msg.isMe ? Icons.call_made : Icons.call_received,
-              color: msg.isMe ? Colors.indigo : Colors.green,
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Builder(
-                builder: (_) {
-                  // Outgoing
-                  if (msg.isMe) {
-                    if (msg.text == 'Outgoing') {
-                      if (msg.duration == null || msg.duration!.isEmpty) {
-                        // Not answered
-                        return Text(
-                          'Not answered',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        );
-                      } else {
-                        return Text(
-                          'Outgoing • ${msg.duration}',
-                          style: TextStyle(
-                            // color: Theme.of(context).primaryColor,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        );
-                      }
-                    }
-                  } else {
-                    // Incoming
-                    // if (msg.text == 'Outgoing') {
-                    // This is an incoming missed call
-                    if (msg.duration == null || msg.duration!.isEmpty) {
-                      return Text(
-                        'Missed Voice call',
-                        style: TextStyle(
-                          color: Colors.red,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      );
-                    } else {
-                      return Text(
-                        'Incoming • ${msg.duration}',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      );
-                    }
-                    // }
-                  }
-                  // Fallback
-                  return Text(
-                    msg.text,
-                    style: TextStyle(
-                      color: Colors.black87,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ));
-  } else {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
-      child: Text(
-        msg.text,
-        style: TextStyle(
-          color: msg.isMe
-              ? Colors.white
-              : Theme.of(context).colorScheme.onSecondary,
-        ),
-      ),
     );
   }
 }

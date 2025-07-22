@@ -4,34 +4,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:airchat/services/encryption_service.dart';
+import 'package:airchat/utility/storage_helpers.dart';
 import 'package:flutter/foundation.dart';
 import 'lan_peer.dart';
 import 'base_connection_service.dart';
 import 'package:uuid/uuid.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-
-Future<String> getReceivedFilesDir() async {
-  if (Platform.isAndroid) {
-    // Use app document directory for mobile
-    final dir = await getExternalStorageDirectory();
-    return '${dir?.path}';
-  } else if (Platform.isIOS) {
-    // Use app document directory for mobile
-    final dir = await getApplicationDocumentsDirectory();
-    return dir.path;
-  } else if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-    // Use user's home directory for desktop
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '.';
-    return p.join(home,'airchat');
-  } else {
-    // Fallback to current directory
-    return './received_files';
-  }
-}
 
 // TLV type indicators
 const int TYPE_CONN_INIT = 0x01;
@@ -49,6 +28,8 @@ class LanConnectionService implements BaseConnectionService {
 
   // Directory to save received files (set this from UI or use a default)
   late final Future<String> receivedFilesDir = getReceivedFilesDir();
+  // Define a single instance of EncryptionService for use throughout the service
+  final EncryptionService encryptionService = EncryptionService();
 
   // UDP settings
   static const int udpPort = 40401;
@@ -69,8 +50,6 @@ class LanConnectionService implements BaseConnectionService {
   // TCP server
   ServerSocket? _serverSocket;
   final List<Socket> _clientSockets = [];
-  final ValueNotifier<Map<String, dynamic>?> fileTransferProgress =
-      ValueNotifier(null);
 
   // Persistent connections: userId -> Socket
   final Map<String, Socket> _connectedPeers = {};
@@ -82,11 +61,17 @@ class LanConnectionService implements BaseConnectionService {
       StreamController.broadcast();
   final StreamController<Map<String, dynamic>> _fileController =
       StreamController.broadcast();
-
+  final StreamController<Map<String, dynamic>> fileTransferProgressController =
+      StreamController.broadcast();
   // Expose streams for UI
+  @override
   Stream<Map<String, dynamic>> get messageEventStream =>
       _messageController.stream;
+  @override
   Stream<Map<String, dynamic>> get fileEventStream => _fileController.stream;
+  @override
+  Stream<Map<String, dynamic>> get fileTransferProgressStream =>
+      fileTransferProgressController.stream;
 
   // Expose connected peers
   List<LanPeer> get connectedPeers => _connectedPeers.keys.map((id) {
@@ -204,14 +189,14 @@ class LanConnectionService implements BaseConnectionService {
 
       // Get dynamic broadcast address
       final broadcastAddress = await _getBroadcastAddress();
-      if(broadcastAddress == null) return;
+      if (broadcastAddress == null) return;
 
       // Broadcast to local network
+      log('broadcasting: $broadcastAddress');
       _udpSocket!.send(bytes, InternetAddress(broadcastAddress), udpPort);
-    } on SocketException catch(e){
+    } on SocketException catch (e) {
       log('Error in socket: $e');
-    }
-     catch (e) {
+    } catch (e) {
       log('Error in broadcasting: $e');
     }
   }
@@ -306,7 +291,8 @@ class LanConnectionService implements BaseConnectionService {
       _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, tcpPort);
       _serverSocket!.listen((client) {
         final myTimestamp = DateTime.now().millisecondsSinceEpoch;
-        _arbitrateAndHandleSocket(client, isOutgoing: false, myTimestamp: myTimestamp);
+        _arbitrateAndHandleSocket(client,
+            isOutgoing: false, myTimestamp: myTimestamp);
       });
       log('Started Server');
     } catch (e) {
@@ -326,8 +312,10 @@ class LanConnectionService implements BaseConnectionService {
 
   // Unified arbitration and socket handler (single listen)
   Future<void> _arbitrateAndHandleSocket(Socket socket,
-      {required bool isOutgoing, LanPeer? peer, required int  myTimestamp}) async {
-    try {            
+      {required bool isOutgoing,
+      LanPeer? peer,
+      required int myTimestamp}) async {
+    try {
       final myConnId = _uuid.v4();
       final myInit = {
         'type': 'connection-init',
@@ -337,7 +325,7 @@ class LanConnectionService implements BaseConnectionService {
       };
       _sendTLV(socket, TYPE_CONN_INIT, utf8.encode(jsonEncode(myInit)));
 
-      List<int> buffer = [];      
+      List<int> buffer = [];
       String? theirUserId;
       IOSink? fileSink;
       int? fileSize;
@@ -364,16 +352,15 @@ class LanConnectionService implements BaseConnectionService {
           buffer = buffer.sublist(5 + len);
           if (type == TYPE_CONN_INIT) {
             final map = jsonDecode(utf8.decode(value)) as Map<String, dynamic>;
-            
+
             theirUserId = map['userId'] as String;
-            
+
             if (!_connectedPeers.containsKey(theirUserId)) {
               _connectedPeers[theirUserId!] = socket;
 
               // ECDH key pair + public key
-              await EncryptionService().generateKeyPair();
-              final myPublicKey =
-                  await EncryptionService().getPublicKeyBase64();
+              await encryptionService.generateKeyPair();
+              final myPublicKey = await encryptionService.getPublicKeyBase64();
               log('pubkey: $myPublicKey');
               _sendTLV(socket, TYPE_KEY_HANDSHAKE, utf8.encode(myPublicKey));
             } else {
@@ -382,11 +369,11 @@ class LanConnectionService implements BaseConnectionService {
             }
           } else if (type == TYPE_KEY_HANDSHAKE) {
             final peerKey = utf8.decode(value);
-            EncryptionService().setPeerPublicKeyFromBase64(peerKey);
-            await EncryptionService().deriveSharedKey();
+            encryptionService.setPeerPublicKeyFromBase64(peerKey);
+            await encryptionService.deriveSharedKey();
           } else if (type == TYPE_CHAT_MSG) {
             final enc = jsonDecode(utf8.decode(value)) as Map<String, dynamic>;
-            final decrypted = await EncryptionService().decrypt(
+            final decrypted = await encryptionService.decrypt(
               nonce: enc['nonce']!,
               cipherText: List<int>.from(enc['cipherText']!),
               mac: enc['mac']!,
@@ -409,7 +396,8 @@ class LanConnectionService implements BaseConnectionService {
             receivingFile = true;
             received = 0;
             //Output file
-            final outDir = Directory('${await receivedFilesDir}/received_files');
+            final outDir =
+                Directory('${await receivedFilesDir}/received_files');
             if (!await outDir.exists()) await outDir.create(recursive: true);
 
             // Handle if same path exists already
@@ -422,7 +410,8 @@ class LanConnectionService implements BaseConnectionService {
               final extIndex = baseName.lastIndexOf('.');
               String newName;
               if (extIndex != -1) {
-                newName = '${baseName.substring(0, extIndex)} ($copyIndex)${baseName.substring(extIndex)}';
+                newName =
+                    '${baseName.substring(0, extIndex)} ($copyIndex)${baseName.substring(extIndex)}';
               } else {
                 newName = '$baseName ($copyIndex)';
               }
@@ -439,11 +428,11 @@ class LanConnectionService implements BaseConnectionService {
               fileSink!.add(value);
               received += value.length;
               if (fileSize != null && fileSize! > 0) {
-                fileTransferProgress.value = {
+                fileTransferProgressController.add({
                   'id': receivingFileId!,
                   'progress': received / fileSize!,
                   'status': 3
-                };
+                });
               }
             }
           } else if (type == TYPE_FILE_END) {
@@ -454,25 +443,23 @@ class LanConnectionService implements BaseConnectionService {
 
             // Call decrypt
             try {
-              final decryptedBytes = await EncryptionService().decrypt(
-                nonce: nonce!,
-                cipherText: encryptedBytes.toList(),
-                mac: mac!,
-              );
+              final inNewThread = fileSize! > 20 * 1024 * 1024;
+              final decryptedBytes = await encryptionService.decrypt(
+                  nonce: nonce!,
+                  cipherText: encryptedBytes.toList(),
+                  mac: mac!,
+                  isNewThread: inNewThread);
 
               // Save decrypted file
               await outFile!.writeAsBytes(decryptedBytes);
-              fileTransferProgress.value = {
-                'id': receivingFileId!,
-                'progress': 1.0,
-                'status': 1
-              };
+              fileTransferProgressController
+                  .add({'id': receivingFileId!, 'progress': 1.0, 'status': 1});
+                   // Scan the file to make it appear in the gallery
+            // await MediaScanner.loadMedia(path: file.path);
             } catch (e) {
-              fileTransferProgress.value = {
-                'id': receivingFileId!,
-                'progress': 0,
-                'status': 2
-              };
+              log('Error in decrypting: $e');
+              fileTransferProgressController
+                  .add({'id': receivingFileId!, 'progress': null, 'status': 2});
             }
             // Delete temp file
             await tempFile!.delete();
@@ -486,7 +473,6 @@ class LanConnectionService implements BaseConnectionService {
             receivingFileId = null;
             mac = null;
             nonce = null;
-            fileTransferProgress.value = null;
           }
         }
       }, onDone: () async {
@@ -521,7 +507,7 @@ class LanConnectionService implements BaseConnectionService {
     final socket = _connectedPeers[peer.userId];
     if (socket != null) {
       final encryptedMap =
-          await EncryptionService().encrypt(utf8.encode(jsonEncode(message)));
+          await encryptionService.encrypt(utf8.encode(jsonEncode(message)));
       final encryptedJson = jsonEncode(encryptedMap);
       _sendTLV(socket, TYPE_CHAT_MSG, utf8.encode(encryptedJson));
       log('Sent message to ${peer.userId}: ${message['message']}');
@@ -541,7 +527,9 @@ class LanConnectionService implements BaseConnectionService {
     final fName = fileName ?? file.uri.pathSegments.last;
 
     final plainBytes = await file.readAsBytes();
-    final encryptedMap = await EncryptionService().encrypt(plainBytes);
+    final inNewThread = plainBytes.length > 5 * 1024 * 1024;
+    final encryptedMap =
+        await encryptionService.encrypt(plainBytes, inNewThread: inNewThread);
 
     final encryptedBytes = encryptedMap['cipherText']! as List<int>;
     final nonce = encryptedMap['nonce']!;
@@ -560,28 +548,22 @@ class LanConnectionService implements BaseConnectionService {
       'timestamp': DateTime.now().toIso8601String(),
     };
     _sendTLV(socket, TYPE_FILE_HEADER, utf8.encode(jsonEncode(header)));
-    // final raf = file.openRead();
-    int sent = 0;
-    const chunkSize = 65536;
-    for (int i = 0; i < encryptedBytes.length; i += chunkSize) {
-      final end = (i + chunkSize < encryptedBytes.length)
-          ? i + chunkSize
-          : encryptedBytes.length;
-      final chunk = encryptedBytes.sublist(i, end);
-      _sendTLV(socket, TYPE_FILE_DATA, chunk);
 
-      sent += chunk.length;
-      Map<String, dynamic> progressMap = {
-        'id': id,
-        'progress': sent / size,
-        'status': 3
-      };
-
-      fileTransferProgress.value = progressMap;
-    }
-    _sendTLV(socket, TYPE_FILE_END, []);
-    fileTransferProgress.value = {'id': id, 'progress': 1.0, 'status': 1};
-    fileTransferProgress.value = null;
+    final receivePort = ReceivePort();
+    await Isolate.spawn(
+        sendFileInIsolate, [encryptedBytes, size, id, receivePort.sendPort]);
+    receivePort.listen((progress) {
+      if (progress['done'] == true) {
+        receivePort.close();
+        return;
+      }
+      _sendTLV(socket, TYPE_FILE_DATA, progress['chunk']);
+      fileTransferProgressController.add(progress['progress']);
+    }, onDone: () {
+      _sendTLV(socket, TYPE_FILE_END, []);
+      fileTransferProgressController
+          .add({'id': id, 'progress': 1.0, 'status': 1});
+    });
   }
 
   // Call this when starting the service
@@ -618,14 +600,11 @@ class LanConnectionService implements BaseConnectionService {
       _notifierStream(discoveredPeers);
 
   @override
-  Stream<Map<String, dynamic>?> get fileTransferProgressStream =>
-      _notifierStream(fileTransferProgress);
-
-  @override
-  Future<void> sendMessage(String id, dynamic peer, String message, String? type) async {
+  Future<void> sendMessage(
+      String id, dynamic peer, String message, String? type) async {
     if (peer is LanPeer) {
       await _sendMessageInternal(id, peer, {
-        'type': type??'message',
+        'type': type ?? 'message',
         'from': userId,
         'name': name,
         'message': message,
@@ -652,7 +631,7 @@ class LanConnectionService implements BaseConnectionService {
     try {
       final myTimestamp = DateTime.now().millisecondsSinceEpoch;
       final socket = await Socket.connect(peer.ip, peer.port);
-       _arbitrateAndHandleSocket(socket,
+     _arbitrateAndHandleSocket(socket,
           isOutgoing: true, peer: peer, myTimestamp: myTimestamp);
     } catch (e) {
       log('Error in connection: $e');
@@ -717,7 +696,28 @@ class LanConnectionService implements BaseConnectionService {
       return 'file';
     }
   }
+}
 
-  @override
-  Stream<Map<String, dynamic>> get messageStream => messageEventStream;
+// In another file or function
+void sendFileInIsolate(List args) async {
+  List<int> encryptedBytes = args[0];
+  int size = args[1];
+  String id = args[2];
+  SendPort sendPort = args[3];
+  int sent = 0;
+  const chunkSize = 65536;
+  for (int i = 0; i < encryptedBytes.length; i += chunkSize) {
+    final end = (i + chunkSize < encryptedBytes.length)
+        ? i + chunkSize
+        : encryptedBytes.length;
+    final chunk = encryptedBytes.sublist(i, end);
+    sent += chunk.length;
+    Map<String, dynamic> progressMap = {
+      'done': false,
+      'progress': {'id': id, 'progress': sent / size, 'status': 3},
+      'chunk': chunk
+    };
+    sendPort.send(progressMap);
+  }
+  sendPort.send({'done': true});
 }

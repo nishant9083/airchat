@@ -47,7 +47,7 @@ class NotificationUtil {
       channelDescription: 'General notifications',
       importance: Importance.max,
       priority: Priority.high,
-      icon: 'mipmap/ic_launcher',
+      icon: '@mipmap/ic_launcher',
       playSound: true,
       color: Color(0xFF0072CE),
 

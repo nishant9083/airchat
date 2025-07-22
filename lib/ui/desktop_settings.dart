@@ -44,13 +44,11 @@ class _DesktopSettingsPageState extends State<DesktopSettingsPage> {
     final colorScheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: colorScheme.onSurfaceVariant,
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: .5),
       appBar: AppBar(
-        title: Text('Settings',
-            style: theme.textTheme.titleLarge
-                ?.copyWith(color: colorScheme.onPrimary)),
-        backgroundColor: colorScheme.primary,
-        foregroundColor: colorScheme.onPrimary,
+        title: Text('Settings',),
+        // backgroundColor: colorScheme.primary,
+        // foregroundColor: colorScheme.onPrimary,
         elevation: 0,
         iconTheme: theme.iconTheme,
       ),

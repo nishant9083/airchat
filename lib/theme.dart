@@ -47,6 +47,7 @@ class AirChatTheme {
         onSurfaceVariant: _lightScaffoldBackground,
         onPrimary: Colors.white, // White text on the dark primary blue
         onSecondary: Colors.white, // White text on the lighter secondary blue
+        onTertiary: _primaryLightColorBase,
         onSurface: _lightOnSurfaceText,        
         error: Colors.red,
         onError: Colors.white,

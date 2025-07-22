@@ -4,8 +4,9 @@ abstract class BaseConnectionService {
   void stopService();
 
   Stream<List<dynamic>> get discoveredPeersStream;
-  Stream<Map<String, dynamic>> get messageStream;
-  Stream<Map<String, dynamic>?> get fileTransferProgressStream;
+  Stream<Map<String, dynamic>> get messageEventStream;
+  Stream<Map<String, dynamic>> get fileEventStream;
+  Stream<Map<String, dynamic>> get fileTransferProgressStream;
 
   Future<void> sendMessage(String id, dynamic peer, String message, String? type);
   Future<void> sendFile(String id, dynamic peer, String filePath, {String? fileName});
